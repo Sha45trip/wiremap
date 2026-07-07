@@ -1,0 +1,24 @@
+[project]
+name = "wiremap"
+version = "0.1.0"
+description = "Full-stack wire mapping: endpoints, functions, flows, and risk flags"
+requires-python = ">=3.10"
+dependencies = [
+  "tree-sitter>=0.21",
+  "tree-sitter-javascript>=0.21",
+  "tree-sitter-typescript>=0.21",
+  "pyyaml>=6.0",
+]
+
+[project.scripts]
+wiremap = "wiremap.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["wiremap", "wiremap.extractors"]
+
+[tool.setuptools.package-data]
+wiremap = ["viewer_template.html"]

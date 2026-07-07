@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>wiremap</title>
+<style>
+  :root {
+    --bg: #10141a; --panel: #171d26; --line: #2a3342;
+    --text: #d7dde6; --muted: #7d8898; --accent: #4fd1c5;
+    --ok: #3ba58c; --warn: #d9a441; --bad: #e2574a; --crit: #ff2e63;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 13px/1.5 "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    display: flex; height: 100vh; overflow: hidden;
+  }
+  #map { flex: 1; overflow: auto; position: relative; }
+  svg { display: block; }
+  header {
+    position: fixed; top: 0; left: 0; right: 340px; z-index: 5;
+    padding: 14px 20px; background: linear-gradient(var(--bg) 70%, transparent);
+    display: flex; align-items: baseline; gap: 18px;
+  }
+  header h1 { font-size: 15px; font-weight: 600; letter-spacing: .08em; }
+  header h1 span { color: var(--accent); }
+  header .stat { color: var(--muted); font-size: 12px; }
+  header .stat b { color: var(--text); font-weight: 600; }
+  #panel {
+    width: 340px; background: var(--panel); border-left: 1px solid var(--line);
+    padding: 20px; overflow-y: auto; flex-shrink: 0;
+  }
+  #panel h2 { font-size: 13px; margin-bottom: 4px; word-break: break-all; }
+  #panel .loc { color: var(--muted); font-size: 11px; margin-bottom: 14px; }
+  #panel .score { font-size: 26px; font-weight: 700; margin-bottom: 14px; }
+  .flag { border: 1px solid var(--line); border-left: 3px solid var(--warn);
+          padding: 10px 12px; margin-bottom: 10px; }
+  .flag.high, .flag.critical { border-left-color: var(--bad); }
+  .flag.critical { border-left-color: var(--crit); }
+  .flag.low { border-left-color: var(--ok); }
+  .flag .code { font-size: 11px; color: var(--muted); text-transform: uppercase;
+                letter-spacing: .06em; margin-bottom: 4px; }
+  .flag .msg { margin-bottom: 6px; }
+  .flag .ev { color: var(--muted); font-size: 11px; margin-bottom: 6px;
+              word-break: break-all; }
+  .flag .fix { color: var(--accent); font-size: 12px; }
+  .flag .fix::before { content: "→ "; }
+  .empty { color: var(--muted); margin-top: 40px; text-align: center; }
+  .colhead { font-size: 11px; fill: var(--muted); text-transform: uppercase;
+             letter-spacing: .1em; }
+  .nodebox { cursor: pointer; }
+  .nodebox rect { fill: var(--panel); stroke: var(--line); rx: 4; }
+  .nodebox:hover rect { stroke: var(--accent); }
+  .nodebox.sel rect { stroke: var(--accent); stroke-width: 1.5; }
+  .nodebox text { fill: var(--text); font-size: 11px; pointer-events: none; }
+  .wire { fill: none; stroke-width: 1.4; opacity: .75; cursor: pointer; }
+  .wire:hover { stroke-width: 2.6; opacity: 1; }
+  .wire.dim { opacity: .12; }
+  .badge { font-size: 10px; }
+  #legend { position: fixed; bottom: 14px; left: 20px; color: var(--muted);
+            font-size: 11px; display: flex; gap: 16px; z-index: 5; }
+  #legend i { display: inline-block; width: 18px; height: 3px; margin-right: 5px;
+              vertical-align: middle; }
+</style>
+</head>
+<body>
+<header>
+  <h1>wire<span>map</span></h1>
+  <span class="stat"><b id="s-wires">0</b> wires</span>
+  <span class="stat"><b id="s-flags">0</b> flags</span>
+  <span class="stat" style="color:var(--bad)"><b id="s-crit">0</b> critical</span>
+</header>
+<div id="map"><svg id="svg"></svg></div>
+<div id="panel"><div class="empty">Click a node or wire<br>to inspect its evidence</div></div>
+<div id="legend">
+  <span><i style="background:var(--ok)"></i>healthy</span>
+  <span><i style="background:var(--warn)"></i>at risk</span>
+  <span><i style="background:var(--bad)"></i>weak</span>
+  <span><i style="background:var(--crit)"></i>critical</span>
+  <span><i style="background:var(--muted);height:1px;border-top:1px dashed var(--muted);background:none"></i>inferred wire</span>
+</div>
+<script id="graph-data" type="application/json">__GRAPH_JSON__</script>
+<script>
+const G = JSON.parse(document.getElementById('graph-data').textContent);
+const COLS = ["component","api_call","endpoint","function","db_model"];
+const COLLABEL = {component:"Components", api_call:"API calls",
+                  endpoint:"Endpoints", "function":"Functions", db_model:"Models"};
+const COLW = 260, GAP = 90, ROWH = 46, TOP = 70;
+
+const byCol = {}; COLS.forEach(c => byCol[c] = []);
+G.nodes.forEach(n => (byCol[n.type] || (byCol[n.type]=[])).push(n));
+COLS.forEach(c => byCol[c].sort((a,b) => b.risk_score - a.risk_score));
+
+const pos = {};
+COLS.forEach((c,i) => byCol[c].forEach((n,j) => {
+  pos[n.id] = { x: 30 + i*(COLW+GAP), y: TOP + j*ROWH };
+}));
+
+function heat(s) {
+  if (s >= 70) return "var(--crit)";
+  if (s >= 40) return "var(--bad)";
+  if (s >= 15) return "var(--warn)";
+  return "var(--ok)";
+}
+const esc = t => t.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+const svg = document.getElementById('svg');
+const maxRows = Math.max(...COLS.map(c => byCol[c].length), 1);
+const W = 30 + COLS.length*(COLW+GAP), H = TOP + maxRows*ROWH + 60;
+svg.setAttribute('width', W); svg.setAttribute('height', H);
+
+let html = '';
+COLS.forEach((c,i) => {
+  if (byCol[c].length)
+    html += `<text class="colhead" x="${30+i*(COLW+GAP)}" y="${TOP-22}">${COLLABEL[c]}</text>`;
+});
+
+// wires first (under nodes)
+G.edges.forEach(e => {
+  const a = pos[e.source], b = pos[e.target];
+  if (!a || !b) return;
+  const x1 = a.x + COLW, y1 = a.y + 14, x2 = b.x, y2 = b.y + 14;
+  const mx = (x1+x2)/2;
+  const dash = e.confidence === 'inferred' ? 'stroke-dasharray="5 4"' :
+               e.confidence === 'probable' ? 'stroke-dasharray="10 3"' : '';
+  html += `<path class="wire" data-eid="${esc(e.id)}" ${dash}
+    d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}"
+    stroke="${heat(e.risk_score)}"/>`;
+});
+
+G.nodes.forEach(n => {
+  const p = pos[n.id]; if (!p) return;
+  const label = n.label.length > 30 ? n.label.slice(0,29)+'…' : n.label;
+  const nf = n.risk_flags.length;
+  html += `<g class="nodebox" data-nid="${esc(n.id)}" transform="translate(${p.x},${p.y})">
+    <rect width="${COLW}" height="30"/>
+    <circle cx="12" cy="15" r="4" fill="${heat(n.risk_score)}"/>
+    <text x="24" y="19">${esc(label)}</text>
+    ${nf ? `<text class="badge" x="${COLW-10}" y="19" text-anchor="end"
+       fill="${heat(n.risk_score)}">${nf}⚑</text>` : ''}
+  </g>`;
+});
+svg.innerHTML = html;
+
+document.getElementById('s-wires').textContent =
+  G.edges.filter(e => e.type === 'http').length;
+const allFlags = G.nodes.flatMap(n => n.risk_flags);
+document.getElementById('s-flags').textContent = allFlags.length;
+document.getElementById('s-crit').textContent =
+  allFlags.filter(f => f.severity === 'critical').length;
+
+const panel = document.getElementById('panel');
+function show(item, kind) {
+  document.querySelectorAll('.nodebox.sel').forEach(el => el.classList.remove('sel'));
+  const flags = item.risk_flags || [];
+  panel.innerHTML = `
+    <h2>${esc(item.label || item.id)}</h2>
+    <div class="loc">${esc(item.file || '')}${item.line ? ':'+item.line : ''}
+      &nbsp;·&nbsp; ${kind}${item.confidence ? ' · '+item.confidence : ''}</div>
+    <div class="score" style="color:${heat(item.risk_score)}">${item.risk_score}
+      <span style="font-size:12px;color:var(--muted)">/100 risk</span></div>
+    ${flags.length ? flags.map(f => `
+      <div class="flag ${f.severity}">
+        <div class="code">${esc(f.severity)} · ${esc(f.category)} · ${esc(f.code)}</div>
+        <div class="msg">${esc(f.message)}</div>
+        <div class="ev">${esc(f.evidence)}</div>
+        <div class="fix">${esc(f.suggestion)}</div>
+      </div>`).join('')
+      : '<div class="empty">No flags on this wire — looks healthy.</div>'}`;
+}
+
+svg.addEventListener('click', ev => {
+  const nb = ev.target.closest('.nodebox');
+  if (nb) {
+    nb.classList.add('sel');
+    const n = G.nodes.find(x => x.id === nb.dataset.nid);
+    if (n) show(n, n.type);
+    // dim unrelated wires
+    document.querySelectorAll('.wire').forEach(w => {
+      const e = G.edges.find(x => x.id === w.dataset.eid);
+      w.classList.toggle('dim', !(e && (e.source === n.id || e.target === n.id)));
+    });
+    return;
+  }
+  const wire = ev.target.closest('.wire');
+  if (wire) {
+    const e = G.edges.find(x => x.id === wire.dataset.eid);
+    if (e) {
+      const s = G.nodes.find(x => x.id === e.source);
+      const t = G.nodes.find(x => x.id === e.target);
+      show({ ...e, label: `${s ? s.label : e.source}  ⟶  ${t ? t.label : e.target}`,
+             risk_flags: [...(e.risk_flags||[]), ...(s ? s.risk_flags : []),
+                          ...(t ? t.risk_flags : [])] }, 'wire · ' + e.type);
+    }
+  }
+});
+</script>
+</body>
+</html>
