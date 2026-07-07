@@ -1,4 +1,6 @@
 demo/
 wiremap.egg-info/
+__pycache__/
+.pytest_cache/
 CLAUDE.md
 ROADMAP.md

@@ -10,6 +10,9 @@ dependencies = [
   "pyyaml>=6.0",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
 [project.scripts]
 wiremap = "wiremap.cli:main"
 
@@ -22,3 +25,7 @@ packages = ["wiremap", "wiremap.extractors"]
 
 [tool.setuptools.package-data]
 wiremap = ["viewer_template.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

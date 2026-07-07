@@ -1,0 +1,488 @@
+{
+  "nodes": [
+    {
+      "id": "call:src/Dashboard.jsx:3",
+      "type": "api_call",
+      "label": "GET /api/stats/overview",
+      "file": "src/Dashboard.jsx",
+      "line": 3,
+      "meta": {
+        "method": "GET",
+        "url": "/api/stats/overview",
+        "confidence": "certain",
+        "has_error_handling": false,
+        "has_timeout": false
+      },
+      "risk_score": 65.0,
+      "risk_flags": [
+        {
+          "code": "no_error_handling",
+          "severity": "medium",
+          "category": "quality",
+          "message": "API call has no .catch and is not inside try/catch",
+          "evidence": "src/Dashboard.jsx:3 `GET /api/stats/overview`",
+          "suggestion": "Handle the rejected promise; show an error state in the UI"
+        },
+        {
+          "code": "no_timeout",
+          "severity": "low",
+          "category": "operational",
+          "message": "API call has no timeout/abort signal",
+          "evidence": "src/Dashboard.jsx:3 `GET /api/stats/overview`",
+          "suggestion": "Pass an AbortController signal or axios timeout"
+        },
+        {
+          "code": "orphan_call",
+          "severity": "high",
+          "category": "contract",
+          "message": "Frontend calls GET /api/stats/overview but no backend route matches",
+          "evidence": "src/Dashboard.jsx:3",
+          "suggestion": "Endpoint missing, renamed, or typo'd \u2014 this will 404 in production"
+        }
+      ]
+    },
+    {
+      "id": "call:src/OrderForm.jsx:6",
+      "type": "api_call",
+      "label": "POST /api/orders",
+      "file": "src/OrderForm.jsx",
+      "line": 6,
+      "meta": {
+        "method": "POST",
+        "url": "/api/orders",
+        "confidence": "certain",
+        "has_error_handling": false,
+        "has_timeout": false
+      },
+      "risk_score": 20.0,
+      "risk_flags": [
+        {
+          "code": "no_error_handling",
+          "severity": "medium",
+          "category": "quality",
+          "message": "API call has no .catch and is not inside try/catch",
+          "evidence": "src/OrderForm.jsx:6 `POST /api/orders`",
+          "suggestion": "Handle the rejected promise; show an error state in the UI"
+        },
+        {
+          "code": "no_timeout",
+          "severity": "low",
+          "category": "operational",
+          "message": "API call has no timeout/abort signal",
+          "evidence": "src/OrderForm.jsx:6 `POST /api/orders`",
+          "suggestion": "Pass an AbortController signal or axios timeout"
+        }
+      ]
+    },
+    {
+      "id": "call:src/OrderForm.jsx:9",
+      "type": "api_call",
+      "label": "GET /api/orders/:param",
+      "file": "src/OrderForm.jsx",
+      "line": 9,
+      "meta": {
+        "method": "GET",
+        "url": "/api/orders/:param",
+        "confidence": "probable",
+        "has_error_handling": true,
+        "has_timeout": false
+      },
+      "risk_score": 5.0,
+      "risk_flags": [
+        {
+          "code": "no_timeout",
+          "severity": "low",
+          "category": "operational",
+          "message": "API call has no timeout/abort signal",
+          "evidence": "src/OrderForm.jsx:9 `GET /api/orders/:param`",
+          "suggestion": "Pass an AbortController signal or axios timeout"
+        }
+      ]
+    },
+    {
+      "id": "call:src/UserProfile.jsx:6",
+      "type": "api_call",
+      "label": "GET /api/users/:param",
+      "file": "src/UserProfile.jsx",
+      "line": 6,
+      "meta": {
+        "method": "GET",
+        "url": "/api/users/:param",
+        "confidence": "probable",
+        "has_error_handling": true,
+        "has_timeout": false
+      },
+      "risk_score": 5.0,
+      "risk_flags": [
+        {
+          "code": "no_timeout",
+          "severity": "low",
+          "category": "operational",
+          "message": "API call has no timeout/abort signal",
+          "evidence": "src/UserProfile.jsx:6 `GET /api/users/:param`",
+          "suggestion": "Pass an AbortController signal or axios timeout"
+        }
+      ]
+    },
+    {
+      "id": "cmp:UserProfile",
+      "type": "component",
+      "label": "UserProfile",
+      "file": "src/UserProfile.jsx",
+      "line": 3,
+      "meta": {},
+      "risk_score": 0.0,
+      "risk_flags": []
+    },
+    {
+      "id": "cmp:loadOrder",
+      "type": "component",
+      "label": "loadOrder",
+      "file": "src/OrderForm.jsx",
+      "line": 9,
+      "meta": {},
+      "risk_score": 0.0,
+      "risk_flags": []
+    },
+    {
+      "id": "cmp:loadStats",
+      "type": "component",
+      "label": "loadStats",
+      "file": "src/Dashboard.jsx",
+      "line": 2,
+      "meta": {},
+      "risk_score": 0.0,
+      "risk_flags": []
+    },
+    {
+      "id": "cmp:submit",
+      "type": "component",
+      "label": "submit",
+      "file": "src/OrderForm.jsx",
+      "line": 4,
+      "meta": {},
+      "risk_score": 0.0,
+      "risk_flags": []
+    },
+    {
+      "id": "db:Base",
+      "type": "db_model",
+      "label": "Base",
+      "file": "app/models.py",
+      "line": 3,
+      "meta": {},
+      "risk_score": 0.0,
+      "risk_flags": []
+    },
+    {
+      "id": "db:Order",
+      "type": "db_model",
+      "label": "Order",
+      "file": "app/models.py",
+      "line": 9,
+      "meta": {},
+      "risk_score": 0.0,
+      "risk_flags": []
+    },
+    {
+      "id": "db:User",
+      "type": "db_model",
+      "label": "User",
+      "file": "app/models.py",
+      "line": 6,
+      "meta": {},
+      "risk_score": 0.0,
+      "risk_flags": []
+    },
+    {
+      "id": "ep:GET /api/orders/{order_id}",
+      "type": "endpoint",
+      "label": "GET /api/orders/{order_id}",
+      "file": "app/main.py",
+      "line": 21,
+      "meta": {
+        "handler": "get_order",
+        "framework": "fastapi",
+        "has_auth": true,
+        "raw_path": "/api/orders/{order_id}"
+      },
+      "risk_score": 0.0,
+      "risk_flags": []
+    },
+    {
+      "id": "ep:GET /api/reports/summary",
+      "type": "endpoint",
+      "label": "GET /api/reports/summary",
+      "file": "app/main.py",
+      "line": 29,
+      "meta": {
+        "handler": "report_summary",
+        "framework": "fastapi",
+        "has_auth": true,
+        "raw_path": "/api/reports/summary"
+      },
+      "risk_score": 7.5,
+      "risk_flags": [
+        {
+          "code": "unused_endpoint",
+          "severity": "low",
+          "category": "contract",
+          "message": "No frontend call site references this endpoint",
+          "evidence": "app/main.py:29",
+          "suggestion": "Dead code, an external consumer, or missing frontend work \u2014 verify and document"
+        }
+      ]
+    },
+    {
+      "id": "ep:GET /api/users/{user_id}",
+      "type": "endpoint",
+      "label": "GET /api/users/{user_id}",
+      "file": "app/main.py",
+      "line": 9,
+      "meta": {
+        "handler": "get_user",
+        "framework": "fastapi",
+        "has_auth": true,
+        "raw_path": "/api/users/{user_id}"
+      },
+      "risk_score": 30.0,
+      "risk_flags": [
+        {
+          "code": "no_error_handling",
+          "severity": "high",
+          "category": "quality",
+          "message": "Handler performs I/O with no try/except",
+          "evidence": "app/main.py:10 calls `get` outside any try block",
+          "suggestion": "Wrap I/O in try/except and return a controlled error response"
+        }
+      ]
+    },
+    {
+      "id": "ep:POST /api/orders",
+      "type": "endpoint",
+      "label": "POST /api/orders",
+      "file": "app/main.py",
+      "line": 14,
+      "meta": {
+        "handler": "create_order",
+        "framework": "fastapi",
+        "has_auth": false,
+        "raw_path": "/api/orders"
+      },
+      "risk_score": 100,
+      "risk_flags": [
+        {
+          "code": "missing_auth",
+          "severity": "high",
+          "category": "security",
+          "message": "POST endpoint has no detectable auth dependency",
+          "evidence": "app/main.py:14 handler `create_order`",
+          "suggestion": "Add an auth dependency (e.g. Depends(get_current_user)) or mark it public intentionally"
+        },
+        {
+          "code": "no_error_handling",
+          "severity": "high",
+          "category": "quality",
+          "message": "Handler performs I/O with no try/except",
+          "evidence": "app/main.py:16 calls `execute` outside any try block",
+          "suggestion": "Wrap I/O in try/except and return a controlled error response"
+        },
+        {
+          "code": "sql_injection_risk",
+          "severity": "critical",
+          "category": "security",
+          "message": "Raw SQL built with string interpolation",
+          "evidence": "app/main.py:16 `f\"INSERT INTO orders VALUES ({payload['id']})\"`",
+          "suggestion": "Use parameterized queries or the ORM"
+        }
+      ]
+    },
+    {
+      "id": "fn:calc_totals",
+      "type": "function",
+      "label": "calc_totals",
+      "file": "app/services.py",
+      "line": 6,
+      "meta": {
+        "complexity": 3
+      },
+      "risk_score": 0.0,
+      "risk_flags": []
+    },
+    {
+      "id": "fn:fetch_orders",
+      "type": "function",
+      "label": "fetch_orders",
+      "file": "app/services.py",
+      "line": 3,
+      "meta": {
+        "complexity": 1
+      },
+      "risk_score": 0.0,
+      "risk_flags": []
+    },
+    {
+      "id": "fn:log_event",
+      "type": "function",
+      "label": "log_event",
+      "file": "app/services.py",
+      "line": 13,
+      "meta": {
+        "complexity": 1
+      },
+      "risk_score": 0.0,
+      "risk_flags": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "call:src/OrderForm.jsx:6=>ep:POST /api/orders",
+      "source": "call:src/OrderForm.jsx:6",
+      "target": "ep:POST /api/orders",
+      "type": "http",
+      "confidence": "certain",
+      "meta": {
+        "method": "POST",
+        "pattern": "/api/orders"
+      },
+      "risk_score": 80.0,
+      "risk_flags": []
+    },
+    {
+      "id": "call:src/OrderForm.jsx:9=>ep:GET /api/orders/{order_id}",
+      "source": "call:src/OrderForm.jsx:9",
+      "target": "ep:GET /api/orders/{order_id}",
+      "type": "http",
+      "confidence": "probable",
+      "meta": {
+        "method": "GET",
+        "pattern": "/api/orders/:p"
+      },
+      "risk_score": 4.0,
+      "risk_flags": []
+    },
+    {
+      "id": "call:src/UserProfile.jsx:6=>ep:GET /api/users/{user_id}",
+      "source": "call:src/UserProfile.jsx:6",
+      "target": "ep:GET /api/users/{user_id}",
+      "type": "http",
+      "confidence": "probable",
+      "meta": {
+        "method": "GET",
+        "pattern": "/api/users/:p"
+      },
+      "risk_score": 24.0,
+      "risk_flags": []
+    },
+    {
+      "id": "cmp:UserProfile->call:src/UserProfile.jsx:6",
+      "source": "cmp:UserProfile",
+      "target": "call:src/UserProfile.jsx:6",
+      "type": "makes_call",
+      "confidence": "certain",
+      "meta": {},
+      "risk_score": 4.0,
+      "risk_flags": []
+    },
+    {
+      "id": "cmp:loadOrder->call:src/OrderForm.jsx:9",
+      "source": "cmp:loadOrder",
+      "target": "call:src/OrderForm.jsx:9",
+      "type": "makes_call",
+      "confidence": "certain",
+      "meta": {},
+      "risk_score": 4.0,
+      "risk_flags": []
+    },
+    {
+      "id": "cmp:loadStats->call:src/Dashboard.jsx:3",
+      "source": "cmp:loadStats",
+      "target": "call:src/Dashboard.jsx:3",
+      "type": "makes_call",
+      "confidence": "certain",
+      "meta": {},
+      "risk_score": 52.0,
+      "risk_flags": []
+    },
+    {
+      "id": "cmp:submit->call:src/OrderForm.jsx:6",
+      "source": "cmp:submit",
+      "target": "call:src/OrderForm.jsx:6",
+      "type": "makes_call",
+      "confidence": "certain",
+      "meta": {},
+      "risk_score": 16.0,
+      "risk_flags": []
+    },
+    {
+      "id": "ep:GET /api/orders/{order_id}->fn:calc_totals",
+      "source": "ep:GET /api/orders/{order_id}",
+      "target": "fn:calc_totals",
+      "type": "calls",
+      "confidence": "certain",
+      "meta": {},
+      "risk_score": 0.0,
+      "risk_flags": []
+    },
+    {
+      "id": "ep:GET /api/orders/{order_id}->fn:fetch_orders",
+      "source": "ep:GET /api/orders/{order_id}",
+      "target": "fn:fetch_orders",
+      "type": "calls",
+      "confidence": "certain",
+      "meta": {},
+      "risk_score": 0.0,
+      "risk_flags": []
+    },
+    {
+      "id": "ep:GET /api/reports/summary->fn:calc_totals",
+      "source": "ep:GET /api/reports/summary",
+      "target": "fn:calc_totals",
+      "type": "calls",
+      "confidence": "certain",
+      "meta": {},
+      "risk_score": 6.0,
+      "risk_flags": []
+    },
+    {
+      "id": "ep:GET /api/reports/summary->fn:fetch_orders",
+      "source": "ep:GET /api/reports/summary",
+      "target": "fn:fetch_orders",
+      "type": "calls",
+      "confidence": "certain",
+      "meta": {},
+      "risk_score": 6.0,
+      "risk_flags": []
+    },
+    {
+      "id": "ep:GET /api/users/{user_id}->q:User",
+      "source": "ep:GET /api/users/{user_id}",
+      "target": "db:User",
+      "type": "queries",
+      "confidence": "certain",
+      "meta": {},
+      "risk_score": 24.0,
+      "risk_flags": []
+    },
+    {
+      "id": "ep:POST /api/orders->fn:log_event",
+      "source": "ep:POST /api/orders",
+      "target": "fn:log_event",
+      "type": "calls",
+      "confidence": "certain",
+      "meta": {},
+      "risk_score": 80.0,
+      "risk_flags": []
+    },
+    {
+      "id": "fn:fetch_orders->q:Order",
+      "source": "fn:fetch_orders",
+      "target": "db:Order",
+      "type": "queries",
+      "confidence": "certain",
+      "meta": {},
+      "risk_score": 0.0,
+      "risk_flags": []
+    }
+  ]
+}
