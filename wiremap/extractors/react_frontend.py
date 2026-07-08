@@ -14,6 +14,7 @@ import tree_sitter_javascript as tsjs
 import tree_sitter_typescript as tsts
 from tree_sitter import Language, Parser
 
+from ..cache import FileCache, content_hash
 from ..graph import Graph, Node, Edge, NodeType, EdgeType, Confidence, RiskFlag
 
 JS_LANG = Language(tsjs.language())
@@ -121,10 +122,12 @@ def _call_features(call_node, src: bytes) -> dict:
     return {"has_error_handling": has_catch, "has_timeout": has_timeout}
 
 
-def extract_frontend(root: str, graph: Graph) -> dict:
+def extract_frontend(root: str, graph: Graph,
+                     cache: FileCache | None = None) -> dict:
     n_calls = 0
-    n_components = 0
     seen_components: set[str] = set()
+    files_parsed = files_cached = 0
+    seen_files: set[str] = set()
 
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in
@@ -137,21 +140,30 @@ def extract_frontend(root: str, graph: Graph) -> dict:
             rel = os.path.relpath(full, root)
             with open(full, "rb") as f:
                 src = f.read()
-            parser = Parser(lang)
-            tree = parser.parse(src)
-            n_calls_file, comps = _extract_from_tree(tree, src, rel, graph)
-            n_calls += n_calls_file
-            for c in comps:
-                if c not in seen_components:
-                    seen_components.add(c)
-                    n_components += 1
+            seen_files.add(rel)
+            sha = content_hash(src)
+            records = cache.get("frontend", rel, sha) if cache else None
+            if records is None:
+                records = _parse_source(src, rel, lang)
+                files_parsed += 1
+                if cache:
+                    cache.put("frontend", rel, sha, records)
+            else:
+                files_cached += 1
+            n_calls += _assemble(records, rel, graph, seen_components)
 
-    return {"api_calls": n_calls, "components": n_components}
+    if cache:
+        cache.prune("frontend", seen_files)
+
+    return {"api_calls": n_calls, "components": len(seen_components),
+            "files_parsed": files_parsed, "files_cached": files_cached}
 
 
-def _extract_from_tree(tree, src: bytes, rel: str, graph: Graph) -> tuple[int, set]:
-    count = 0
-    comps: set[str] = set()
+def _parse_source(src: bytes, rel: str, lang) -> list[dict]:
+    """Parse one file into JSON-serializable call records (cacheable)."""
+    parser = Parser(lang)
+    tree = parser.parse(src)
+    records: list[dict] = []
     stack = [tree.root_node]
     while stack:
         node = stack.pop()
@@ -194,41 +206,56 @@ def _extract_from_tree(tree, src: bytes, rel: str, graph: Graph) -> tuple[int, s
             url = "/" + url
 
         comp_name, comp_line = _enclosing_component(node, src)
-        comps.add(comp_name)
-        line = node.start_point[0] + 1
+        features = _call_features(node, src)
+        records.append({
+            "method": method, "url": url, "confidence": confidence.value,
+            "component": comp_name, "component_line": comp_line,
+            "line": node.start_point[0] + 1,
+            "has_error_handling": features["has_error_handling"],
+            "has_timeout": features["has_timeout"],
+        })
+    return records
 
-        comp_id = f"cmp:{comp_name}"
+
+def _assemble(records: list[dict], rel: str, graph: Graph,
+              seen_components: set[str]) -> int:
+    """Turn one file's call records into graph nodes, edges, and flags."""
+    for rec in records:
+        method, url, line = rec["method"], rec["url"], rec["line"]
+        seen_components.add(rec["component"])
+
+        comp_id = f"cmp:{rec['component']}"
         graph.add_node(Node(
-            id=comp_id, type=NodeType.COMPONENT, label=comp_name,
-            file=rel, line=comp_line,
+            id=comp_id, type=NodeType.COMPONENT, label=rec["component"],
+            file=rel, line=rec["component_line"],
         ))
 
         call_id = f"call:{rel}:{line}"
-        features = _call_features(node, src)
         graph.add_node(Node(
             id=call_id, type=NodeType.API_CALL,
             label=f"{method} {url}", file=rel, line=line,
             meta={"method": method, "url": url,
-                  "confidence": confidence.value, **features},
+                  "confidence": rec["confidence"],
+                  "has_error_handling": rec["has_error_handling"],
+                  "has_timeout": rec["has_timeout"]},
         ))
         graph.add_edge(Edge(
             id=f"{comp_id}->{call_id}", source=comp_id, target=call_id,
             type=EdgeType.MAKES_CALL,
         ))
 
-        if not features["has_error_handling"]:
+        if not rec["has_error_handling"]:
             graph.flag_node(call_id, RiskFlag(
                 code="no_error_handling", severity="medium", category="quality",
                 message="API call has no .catch and is not inside try/catch",
                 evidence=f"{rel}:{line} `{method} {url}`",
                 suggestion="Handle the rejected promise; show an error state in the UI",
             ))
-        if not features["has_timeout"]:
+        if not rec["has_timeout"]:
             graph.flag_node(call_id, RiskFlag(
                 code="no_timeout", severity="low", category="operational",
                 message="API call has no timeout/abort signal",
                 evidence=f"{rel}:{line} `{method} {url}`",
                 suggestion="Pass an AbortController signal or axios timeout",
             ))
-        count += 1
-    return count, comps
+    return len(records)

@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import ast
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 
+from ..cache import FileCache, content_hash
 from ..graph import Graph, Node, Edge, NodeType, EdgeType, Confidence, RiskFlag
 
 HTTP_METHODS = {"get", "post", "put", "delete", "patch", "head", "options"}
@@ -228,11 +229,29 @@ class _FunctionBodyAnalyzer(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-def extract_backend(root: str, graph: Graph) -> dict:
+def _parse_source(source: str, rel: str) -> dict:
+    """Parse one file into a JSON-serializable extraction record (cacheable)."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return {"routes": [], "functions": {}, "models": []}
+    v = _ModuleVisitor(rel, rel)
+    v.visit(tree)
+    return {
+        "routes": [asdict(r) for r in v.routes],
+        "functions": {q: asdict(fi) for q, fi in v.functions.items()},
+        "models": [[m, ln] for m, ln in v.orm_models],
+    }
+
+
+def extract_backend(root: str, graph: Graph,
+                    cache: FileCache | None = None) -> dict:
     """Scan a Python source tree, populate graph, return summary stats."""
     all_functions: dict[str, FunctionInfo] = {}
     all_routes: list[RouteInfo] = []
     all_models: list[tuple[str, str, int]] = []
+    files_parsed = files_cached = 0
+    seen_files: set[str] = set()
 
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in
@@ -242,16 +261,25 @@ def extract_backend(root: str, graph: Graph) -> dict:
                 continue
             full = os.path.join(dirpath, fn)
             rel = os.path.relpath(full, root)
-            try:
-                with open(full, encoding="utf-8", errors="replace") as f:
-                    tree = ast.parse(f.read())
-            except SyntaxError:
-                continue
-            v = _ModuleVisitor(full, rel)
-            v.visit(tree)
-            all_functions.update(v.functions)
-            all_routes.extend(v.routes)
-            all_models.extend((m, rel, ln) for m, ln in v.orm_models)
+            with open(full, "rb") as f:
+                raw = f.read()
+            seen_files.add(rel)
+            sha = content_hash(raw)
+            data = cache.get("backend", rel, sha) if cache else None
+            if data is None:
+                data = _parse_source(raw.decode("utf-8", errors="replace"), rel)
+                files_parsed += 1
+                if cache:
+                    cache.put("backend", rel, sha, data)
+            else:
+                files_cached += 1
+            all_routes.extend(RouteInfo(**r) for r in data["routes"])
+            all_functions.update(
+                {q: FunctionInfo(**fi) for q, fi in data["functions"].items()})
+            all_models.extend((m, rel, ln) for m, ln in data["models"])
+
+    if cache:
+        cache.prune("backend", seen_files)
 
     # --- nodes: ORM models ---
     for mname, mfile, mline in all_models:
@@ -308,7 +336,8 @@ def extract_backend(root: str, graph: Graph) -> dict:
             ))
 
     return {"routes": len(all_routes), "functions": len(all_functions),
-            "models": len(all_models)}
+            "models": len(all_models),
+            "files_parsed": files_parsed, "files_cached": files_cached}
 
 
 def _walk_calls(graph: Graph, parent_id: str, fname: str,

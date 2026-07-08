@@ -1,7 +1,7 @@
 """wiremap CLI.
 
     wiremap scan <project_root> [--backend DIR] [--frontend DIR]
-                 [--out DIR] [--serve]
+                 [--out DIR] [--no-cache] [--serve]
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import os
 import sys
 import webbrowser
 
+from .cache import FileCache
 from .graph import Graph
 from .extractors.python_backend import extract_backend
 from .extractors.react_frontend import extract_frontend
@@ -46,15 +47,28 @@ def scan(args) -> int:
 
     print(f"wiremap · scanning\n  backend : {backend}\n  frontend: {frontend}")
 
+    out_dir = os.path.abspath(args.out or os.path.join(root, ".wiremap"))
+    os.makedirs(out_dir, exist_ok=True)
+
+    cache = None
+    if not args.no_cache:
+        cache = FileCache(os.path.join(out_dir, "cache.json"))
+
     graph = Graph()
-    b_stats = extract_backend(backend, graph)
-    f_stats = extract_frontend(frontend, graph)
+    b_stats = extract_backend(backend, graph, cache)
+    f_stats = extract_frontend(frontend, graph, cache)
     m_stats = match(graph)
     config = load_config(root)
     r_stats = score(graph, config)
 
-    out_dir = os.path.abspath(args.out or os.path.join(root, ".wiremap"))
-    os.makedirs(out_dir, exist_ok=True)
+    if cache is not None:
+        cache.save()
+
+    parsed = b_stats["files_parsed"] + f_stats["files_parsed"]
+    from_cache = b_stats["files_cached"] + f_stats["files_cached"]
+    cache_note = "cache disabled" if args.no_cache else \
+        f"{from_cache} unchanged, from cache"
+
     graph_path = os.path.join(out_dir, "graph.json")
     graph.save(graph_path)
 
@@ -68,6 +82,7 @@ def scan(args) -> int:
         f.write(html)
 
     print(f"""
+  files parsed      {parsed}  ({cache_note})
   routes found      {b_stats['routes']}
   api call sites    {f_stats['api_calls']}
   wires matched     {m_stats['matched']}
@@ -100,6 +115,8 @@ def main(argv=None) -> int:
     ps.add_argument("--backend", help="backend source dir (default: auto-detect)")
     ps.add_argument("--frontend", help="frontend source dir (default: auto-detect)")
     ps.add_argument("--out", help="output dir (default: <root>/.wiremap)")
+    ps.add_argument("--no-cache", action="store_true",
+                    help="force full re-parse, ignoring .wiremap/cache.json")
     ps.add_argument("--serve", action="store_true", help="serve the viewer locally")
     ps.add_argument("--port", type=int, default=8787)
     ps.set_defaults(func=scan)
