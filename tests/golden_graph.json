@@ -204,7 +204,8 @@
         "handler": "get_order",
         "framework": "fastapi",
         "has_auth": true,
-        "raw_path": "/api/orders/{order_id}"
+        "raw_path": "/api/orders/{order_id}",
+        "handler_end_line": 26
       },
       "risk_score": 0.0,
       "risk_flags": []
@@ -219,7 +220,8 @@
         "handler": "report_summary",
         "framework": "fastapi",
         "has_auth": true,
-        "raw_path": "/api/reports/summary"
+        "raw_path": "/api/reports/summary",
+        "handler_end_line": 31
       },
       "risk_score": 7.5,
       "risk_flags": [
@@ -243,7 +245,8 @@
         "handler": "get_user",
         "framework": "fastapi",
         "has_auth": true,
-        "raw_path": "/api/users/{user_id}"
+        "raw_path": "/api/users/{user_id}",
+        "handler_end_line": 11
       },
       "risk_score": 30.0,
       "risk_flags": [
@@ -267,7 +270,8 @@
         "handler": "create_order",
         "framework": "fastapi",
         "has_auth": false,
-        "raw_path": "/api/orders"
+        "raw_path": "/api/orders",
+        "handler_end_line": 18
       },
       "risk_score": 100,
       "risk_flags": [
@@ -304,7 +308,8 @@
       "file": "app/services.py",
       "line": 6,
       "meta": {
-        "complexity": 3
+        "complexity": 3,
+        "end_line": 11
       },
       "risk_score": 0.0,
       "risk_flags": []
@@ -316,7 +321,8 @@
       "file": "app/services.py",
       "line": 3,
       "meta": {
-        "complexity": 1
+        "complexity": 1,
+        "end_line": 4
       },
       "risk_score": 0.0,
       "risk_flags": []
@@ -328,7 +334,8 @@
       "file": "app/services.py",
       "line": 13,
       "meta": {
-        "complexity": 1
+        "complexity": 1,
+        "end_line": 14
       },
       "risk_score": 0.0,
       "risk_flags": []

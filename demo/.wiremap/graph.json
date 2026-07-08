@@ -40,7 +40,9 @@
         "handler": "get_user",
         "framework": "fastapi",
         "has_auth": true,
-        "raw_path": "/api/users/{user_id}"
+        "raw_path": "/api/users/{user_id}",
+        "handler_end_line": 11,
+        "coverage_pct": 100.0
       },
       "risk_score": 30.0,
       "risk_flags": [
@@ -64,7 +66,9 @@
         "handler": "create_order",
         "framework": "fastapi",
         "has_auth": false,
-        "raw_path": "/api/orders"
+        "raw_path": "/api/orders",
+        "handler_end_line": 18,
+        "coverage_pct": 0.0
       },
       "risk_score": 100,
       "risk_flags": [
@@ -91,6 +95,14 @@
           "message": "POST endpoint has no detectable auth dependency",
           "evidence": "app\\main.py:14 handler `create_order`",
           "suggestion": "Add an auth dependency (e.g. Depends(get_current_user)) or mark it public intentionally"
+        },
+        {
+          "code": "untested_handler",
+          "severity": "high",
+          "category": "quality",
+          "message": "Endpoint handler has no test coverage",
+          "evidence": "app\\main.py:14 handler `create_order` body coverage 0.0%",
+          "suggestion": "Add a test that exercises this endpoint (e.g. via the framework's test client)"
         }
       ]
     },
@@ -101,7 +113,9 @@
       "file": "app\\services.py",
       "line": 13,
       "meta": {
-        "complexity": 1
+        "complexity": 1,
+        "end_line": 14,
+        "coverage_pct": 0.0
       },
       "risk_score": 0.0,
       "risk_flags": []
@@ -116,10 +130,21 @@
         "handler": "get_order",
         "framework": "fastapi",
         "has_auth": true,
-        "raw_path": "/api/orders/{order_id}"
+        "raw_path": "/api/orders/{order_id}",
+        "handler_end_line": 26,
+        "coverage_pct": 40.0
       },
-      "risk_score": 0.0,
-      "risk_flags": []
+      "risk_score": 15.0,
+      "risk_flags": [
+        {
+          "code": "untested_handler",
+          "severity": "medium",
+          "category": "quality",
+          "message": "Endpoint handler body is only 40.0% covered",
+          "evidence": "app\\main.py:21 handler `get_order` body coverage 40.0%",
+          "suggestion": "Add a test that exercises this endpoint (e.g. via the framework's test client)"
+        }
+      ]
     },
     {
       "id": "fn:fetch_orders",
@@ -128,7 +153,9 @@
       "file": "app\\services.py",
       "line": 3,
       "meta": {
-        "complexity": 1
+        "complexity": 1,
+        "end_line": 4,
+        "coverage_pct": 100.0
       },
       "risk_score": 0.0,
       "risk_flags": []
@@ -140,7 +167,9 @@
       "file": "app\\services.py",
       "line": 6,
       "meta": {
-        "complexity": 3
+        "complexity": 3,
+        "end_line": 11,
+        "coverage_pct": 60.0
       },
       "risk_score": 0.0,
       "risk_flags": []
@@ -155,7 +184,9 @@
         "handler": "report_summary",
         "framework": "fastapi",
         "has_auth": true,
-        "raw_path": "/api/reports/summary"
+        "raw_path": "/api/reports/summary",
+        "handler_end_line": 31,
+        "coverage_pct": 100.0
       },
       "risk_score": 7.5,
       "risk_flags": [
@@ -362,7 +393,7 @@
       "type": "calls",
       "confidence": "certain",
       "meta": {},
-      "risk_score": 0.0,
+      "risk_score": 12.0,
       "risk_flags": []
     },
     {
@@ -382,7 +413,7 @@
       "type": "calls",
       "confidence": "certain",
       "meta": {},
-      "risk_score": 0.0,
+      "risk_score": 12.0,
       "risk_flags": []
     },
     {
@@ -455,7 +486,7 @@
         "method": "GET",
         "pattern": "/api/orders/:p"
       },
-      "risk_score": 4.0,
+      "risk_score": 12.0,
       "risk_flags": []
     },
     {

@@ -292,16 +292,17 @@ def extract_backend(root: str, graph: Graph,
     for r in all_routes:
         full_path = (r.router_prefix.rstrip("/") + "/" + r.path.lstrip("/")).rstrip("/") or "/"
         ep_id = f"ep:{r.method} {full_path}"
+        info = all_functions.get(r.handler)
         graph.add_node(Node(
             id=ep_id, type=NodeType.ENDPOINT, label=f"{r.method} {full_path}",
             file=r.file, line=r.line,
             meta={"handler": r.handler, "framework": r.framework,
-                  "has_auth": r.has_auth_dep, "raw_path": full_path},
+                  "has_auth": r.has_auth_dep, "raw_path": full_path,
+                  "handler_end_line": info.end_line if info else 0},
         ))
         _walk_calls(graph, ep_id, r.handler, all_functions, depth=0, seen=set())
 
         # --- static risk signals on the handler ---
-        info = all_functions.get(r.handler)
         if info:
             if info.io_calls_outside_try and not info.has_try:
                 first = info.io_calls_outside_try[0]
@@ -363,7 +364,8 @@ def _walk_calls(graph: Graph, parent_id: str, fname: str,
             graph.add_node(Node(
                 id=fid, type=NodeType.FUNCTION, label=callee,
                 file=functions[callee].file, line=functions[callee].line,
-                meta={"complexity": functions[callee].complexity},
+                meta={"complexity": functions[callee].complexity,
+                      "end_line": functions[callee].end_line},
             ))
             graph.add_edge(Edge(
                 id=f"{parent_id}->{fid}", source=parent_id, target=fid,

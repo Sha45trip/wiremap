@@ -1,7 +1,7 @@
 """wiremap CLI.
 
     wiremap scan <project_root> [--backend DIR] [--frontend DIR]
-                 [--out DIR] [--no-cache] [--serve]
+                 [--out DIR] [--no-cache] [--coverage FILE] [--serve]
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import sys
 import webbrowser
 
 from .cache import FileCache
+from .coverage import apply_coverage, load_coverage
 from .graph import Graph
 from .extractors.python_backend import extract_backend
 from .extractors.react_frontend import extract_frontend
@@ -58,6 +59,16 @@ def scan(args) -> int:
     b_stats = extract_backend(backend, graph, cache)
     f_stats = extract_frontend(frontend, graph, cache)
     m_stats = match(graph)
+
+    cov_stats = None
+    if args.coverage:
+        try:
+            cov = load_coverage(args.coverage)
+        except (OSError, ValueError, json.JSONDecodeError) as e:
+            print(f"error: cannot read coverage report: {e}", file=sys.stderr)
+            return 2
+        cov_stats = apply_coverage(graph, cov)
+
     config = load_config(root)
     r_stats = score(graph, config)
 
@@ -87,7 +98,8 @@ def scan(args) -> int:
   api call sites    {f_stats['api_calls']}
   wires matched     {m_stats['matched']}
   orphan calls      {m_stats['orphan_calls']}   <- frontend calls with no backend route
-  unused endpoints  {m_stats['unused_endpoints']}
+  unused endpoints  {m_stats['unused_endpoints']}{f'''
+  coverage mapped   {cov_stats['nodes_with_coverage']} nodes  ({cov_stats['untested_handlers']} under-tested handlers)''' if cov_stats else ''}
   risk flags        {r_stats['total_flags']}  ({r_stats['critical_flags']} critical)
 
   graph  -> {graph_path}
@@ -117,6 +129,9 @@ def main(argv=None) -> int:
     ps.add_argument("--out", help="output dir (default: <root>/.wiremap)")
     ps.add_argument("--no-cache", action="store_true",
                     help="force full re-parse, ignoring .wiremap/cache.json")
+    ps.add_argument("--coverage",
+                    help="coverage.py JSON report (`coverage json`) to map "
+                         "onto handlers/functions")
     ps.add_argument("--serve", action="store_true", help="serve the viewer locally")
     ps.add_argument("--port", type=int, default=8787)
     ps.set_defaults(func=scan)
