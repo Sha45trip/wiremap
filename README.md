@@ -59,6 +59,27 @@ python demo/replay_spans.py   # terminal 2 — replays canned traffic
 wiremap scan demo             # watch hot_fragile appear on POST /api/orders
 ```
 
+## Team mode (Docker self-hosted)
+
+One container serves the viewer, receives OTLP traces, and re-scans the
+mounted repo every 15 minutes (or on demand):
+
+```bash
+WIREMAP_REPO=/path/to/your/project docker compose up -d
+# viewer:   http://localhost:8787/wiremap.html
+# traces:   OTEL_EXPORTER_OTLP_ENDPOINT=http://<host>:8787 (http/json)
+# re-scan:  curl -X POST http://<host>:8787/rescan
+```
+
+Or without Docker: `wiremap serve . --rescan-interval 900`.
+
+Security model (v1): intended for **trusted networks** — the viewer and
+graph are served without auth. Set `WIREMAP_TOKEN` to require
+`Authorization: Bearer <token>` on the mutating routes (`/v1/traces`,
+`/rescan`); OTel exporters pass it via
+`OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <token>"`. The repo is
+mounted read-only; outputs live on a named volume.
+
 ## Coverage overlay (coverage.py)
 
 ```bash
@@ -127,7 +148,8 @@ cache.py                       sha256-keyed per-file cache for incremental scans
 coverage.py                    coverage.py JSON -> coverage_pct + untested_handler
 collector.py                   OTLP/JSON receiver, rolling-window store, runtime flags
 graph.py                       unified node/edge model, JSON serialization
-cli.py                         scan/collect commands, viewer generation, local server
+server.py                      team-mode daemon: viewer + OTLP + webhook/interval re-scans
+cli.py                         scan/collect/serve commands, viewer generation
 viewer_template.html           zero-dependency interactive wire map
 ```
 
@@ -153,12 +175,14 @@ collector, contract checking (Pydantic `response_model` field sets vs the
 fields the frontend actually reads — declared models only, exact field
 names, so it never guesses), viewer scalability (wheel-zoom/drag-pan,
 risk-threshold slider, search, collapse-by-file above 60 nodes per column —
-still a single self-contained HTML file). Phase 2 is complete. Next:
+still a single self-contained HTML file), Docker self-hosted team mode
+(`wiremap serve` + Dockerfile/compose, WIREMAP_TOKEN). Next:
 
-- **Team mode** — Docker self-hosted (collector + viewer service),
-  `wiremap diff` + GitHub Action PR comments with `--fail-on critical`
-  merge gating, Django/Flask-blueprint/React-Query/OpenAPI adapters,
-  module-qualified call graph.
+- **CI integration** — `wiremap diff` + GitHub Action PR comments with
+  `--fail-on critical` merge gating.
+- **Framework adapters** — Django, Flask blueprints, React Query,
+  generated OpenAPI clients.
+- **Module-qualified call graph** — removes cross-module name collisions.
 
 ## Extending
 

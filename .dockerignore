@@ -1,0 +1,11 @@
+.git
+.wiremap
+**/.wiremap
+__pycache__
+**/__pycache__
+.pytest_cache
+tests
+demo
+wiremap.egg-info
+Dockerfile
+docker-compose.yaml

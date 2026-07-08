@@ -1,0 +1,26 @@
+# wiremap team mode (ROADMAP 3.1).
+#
+#   WIREMAP_REPO=/path/to/your/project docker compose up -d
+#
+# Viewer:  http://localhost:8787/wiremap.html   (read-only, no auth)
+# Traces:  point OTel exporters at http://<host>:8787 (OTLP/JSON)
+# Re-scan: every 15 min, or POST /rescan to trigger one now
+#
+# v1 auth model: intended for trusted networks. Set WIREMAP_TOKEN to require
+# `Authorization: Bearer <token>` on the mutating routes (/v1/traces,
+# /rescan); exporters send it via
+#   OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <token>"
+services:
+  wiremap:
+    build: .
+    ports:
+      - "8787:8787"
+    volumes:
+      - ${WIREMAP_REPO:?set WIREMAP_REPO to the repo you want scanned}:/repo:ro
+      - wiremap-data:/data
+    environment:
+      WIREMAP_TOKEN: ${WIREMAP_TOKEN:-}
+    restart: unless-stopped
+
+volumes:
+  wiremap-data:

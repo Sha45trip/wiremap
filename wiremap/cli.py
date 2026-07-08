@@ -3,6 +3,7 @@
     wiremap scan <project_root> [--backend DIR] [--frontend DIR]
                  [--out DIR] [--no-cache] [--coverage FILE] [--serve]
     wiremap collect [project_root] [--port 4318] [--window 24]
+    wiremap serve [project_root] [--port 8787] [--rescan-interval SECS]
 """
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ from .extractors.python_backend import extract_backend
 from .extractors.react_frontend import extract_frontend
 from .matcher import match
 from .risk import load_config, score
+from .server import run_server
 
 
 def _guess_dirs(root: str) -> tuple[str, str]:
@@ -39,37 +41,35 @@ def _guess_dirs(root: str) -> tuple[str, str]:
     return backend, frontend
 
 
-def scan(args) -> int:
-    root = os.path.abspath(args.project_root)
-    backend = os.path.abspath(args.backend) if args.backend else None
-    frontend = os.path.abspath(args.frontend) if args.frontend else None
-    if backend is None or frontend is None:
+def perform_scan(project_root: str, backend: str | None = None,
+                 frontend: str | None = None, out: str | None = None,
+                 no_cache: bool = False, coverage: str | None = None) -> dict:
+    """Run the full pipeline and write graph.json + wiremap.html.
+
+    Silent (no printing) so the team server can re-scan in-process;
+    `scan()` prints the summary. Raises on unreadable coverage reports.
+    """
+    root = os.path.abspath(project_root)
+    b_dir = os.path.abspath(backend) if backend else None
+    f_dir = os.path.abspath(frontend) if frontend else None
+    if b_dir is None or f_dir is None:
         gb, gf = _guess_dirs(root)
-        backend = backend or gb
-        frontend = frontend or gf
+        b_dir = b_dir or gb
+        f_dir = f_dir or gf
 
-    print(f"wiremap · scanning\n  backend : {backend}\n  frontend: {frontend}")
-
-    out_dir = os.path.abspath(args.out or os.path.join(root, ".wiremap"))
+    out_dir = os.path.abspath(out or os.path.join(root, ".wiremap"))
     os.makedirs(out_dir, exist_ok=True)
 
-    cache = None
-    if not args.no_cache:
-        cache = FileCache(os.path.join(out_dir, "cache.json"))
+    cache = None if no_cache else FileCache(os.path.join(out_dir, "cache.json"))
 
     graph = Graph()
-    b_stats = extract_backend(backend, graph, cache)
-    f_stats = extract_frontend(frontend, graph, cache)
+    b_stats = extract_backend(b_dir, graph, cache)
+    f_stats = extract_frontend(f_dir, graph, cache)
     m_stats = match(graph)
 
     cov_stats = None
-    if args.coverage:
-        try:
-            cov = load_coverage(args.coverage)
-        except (OSError, ValueError, json.JSONDecodeError) as e:
-            print(f"error: cannot read coverage report: {e}", file=sys.stderr)
-            return 2
-        cov_stats = apply_coverage(graph, cov)
+    if coverage:
+        cov_stats = apply_coverage(graph, load_coverage(coverage))
 
     config = load_config(root)
     rt_stats = merge_runtime(graph, os.path.join(out_dir, "runtime.json"), config)
@@ -77,11 +77,6 @@ def scan(args) -> int:
 
     if cache is not None:
         cache.save()
-
-    parsed = b_stats["files_parsed"] + f_stats["files_parsed"]
-    from_cache = b_stats["files_cached"] + f_stats["files_cached"]
-    cache_note = "cache disabled" if args.no_cache else \
-        f"{from_cache} unchanged, from cache"
 
     graph_path = os.path.join(out_dir, "graph.json")
     graph.save(graph_path)
@@ -95,7 +90,34 @@ def scan(args) -> int:
     with open(viewer_path, "w") as f:
         f.write(html)
 
-    print(f"""
+    return {"backend": b_dir, "frontend": f_dir, "out_dir": out_dir,
+            "graph_path": graph_path, "viewer_path": viewer_path,
+            "b": b_stats, "f": f_stats, "m": m_stats,
+            "cov": cov_stats, "rt": rt_stats, "r": r_stats}
+
+
+def scan(args) -> int:
+    try:
+        res = perform_scan(args.project_root, backend=args.backend,
+                           frontend=args.frontend, out=args.out,
+                           no_cache=args.no_cache, coverage=args.coverage)
+    except (OSError, ValueError, json.JSONDecodeError) as e:
+        if args.coverage:
+            print(f"error: cannot read coverage report: {e}", file=sys.stderr)
+            return 2
+        raise
+
+    b_stats, f_stats, m_stats = res["b"], res["f"], res["m"]
+    cov_stats, rt_stats, r_stats = res["cov"], res["rt"], res["r"]
+    parsed = b_stats["files_parsed"] + f_stats["files_parsed"]
+    from_cache = b_stats["files_cached"] + f_stats["files_cached"]
+    cache_note = "cache disabled" if args.no_cache else \
+        f"{from_cache} unchanged, from cache"
+
+    print(f"""wiremap · scanning
+  backend : {res['backend']}
+  frontend: {res['frontend']}
+
   files parsed      {parsed}  ({cache_note})
   routes found      {b_stats['routes']}
   api call sites    {f_stats['api_calls']}
@@ -106,11 +128,11 @@ def scan(args) -> int:
   runtime overlay   {rt_stats['endpoints_with_traffic']} endpoints with traffic  ({rt_stats['runtime_flags']} runtime flags)''' if rt_stats else ''}
   risk flags        {r_stats['total_flags']}  ({r_stats['critical_flags']} critical)
 
-  graph  -> {graph_path}
-  viewer -> {viewer_path}""")
+  graph  -> {res['graph_path']}
+  viewer -> {res['viewer_path']}""")
 
     if args.serve:
-        os.chdir(out_dir)
+        os.chdir(res["out_dir"])
         port = args.port
         print(f"\n  serving http://localhost:{port}/wiremap.html  (Ctrl-C to stop)")
         try:
@@ -148,6 +170,23 @@ def main(argv=None) -> int:
     pc.add_argument("--window", type=float, default=24.0,
                     help="rolling window in hours (default 24)")
     pc.set_defaults(func=lambda a: run_collector(a.project_root, a.port, a.window))
+
+    pv = sub.add_parser("serve",
+                        help="team-mode server: viewer + OTLP collector + "
+                             "webhook/scheduled re-scans (WIREMAP_TOKEN "
+                             "guards mutating routes)")
+    pv.add_argument("project_root", nargs="?", default=".")
+    pv.add_argument("--backend", help="backend source dir (default: auto-detect)")
+    pv.add_argument("--frontend", help="frontend source dir (default: auto-detect)")
+    pv.add_argument("--out", help="output dir (default: <root>/.wiremap); "
+                                  "use a writable volume when the repo mount "
+                                  "is read-only")
+    pv.add_argument("--port", type=int, default=8787)
+    pv.add_argument("--rescan-interval", type=float, default=0,
+                    help="seconds between automatic re-scans (0 = webhook only)")
+    pv.set_defaults(func=lambda a: run_server(
+        a.project_root, a.port, out=a.out, backend=a.backend,
+        frontend=a.frontend, rescan_interval=a.rescan_interval))
 
     args = p.parse_args(argv)
     return args.func(args)
