@@ -15,17 +15,33 @@
     font: 13px/1.5 "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
     display: flex; height: 100vh; overflow: hidden;
   }
-  #map { flex: 1; overflow: auto; position: relative; }
-  svg { display: block; }
+  #map { flex: 1; overflow: hidden; position: relative; cursor: grab; }
+  #map.panning { cursor: grabbing; }
+  svg { display: block; width: 100%; height: 100%; }
   header {
-    position: fixed; top: 0; left: 0; right: 340px; z-index: 5;
-    padding: 14px 20px; background: linear-gradient(var(--bg) 70%, transparent);
-    display: flex; align-items: baseline; gap: 18px;
+    position: absolute; top: 0; left: 0; right: 0; z-index: 5;
+    padding: 12px 20px; background: linear-gradient(var(--bg) 60%, transparent);
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   }
   header h1 { font-size: 15px; font-weight: 600; letter-spacing: .08em; }
   header h1 span { color: var(--accent); }
   header .stat { color: var(--muted); font-size: 12px; }
   header .stat b { color: var(--text); font-weight: 600; }
+  header input[type="search"] {
+    background: var(--panel); border: 1px solid var(--line); color: var(--text);
+    font: inherit; font-size: 12px; padding: 4px 8px; width: 180px;
+    border-radius: 3px; outline: none;
+  }
+  header input[type="search"]:focus { border-color: var(--accent); }
+  header input[type="range"] { width: 110px; accent-color: var(--accent); }
+  header label { color: var(--muted); font-size: 12px; display: flex;
+                 align-items: center; gap: 6px; }
+  header button {
+    background: var(--panel); border: 1px solid var(--line); color: var(--muted);
+    font: inherit; font-size: 12px; padding: 4px 10px; cursor: pointer;
+    border-radius: 3px;
+  }
+  header button:hover { color: var(--text); border-color: var(--accent); }
   #panel {
     width: 340px; background: var(--panel); border-left: 1px solid var(--line);
     padding: 20px; overflow-y: auto; flex-shrink: 0;
@@ -50,53 +66,66 @@
   .empty { color: var(--muted); margin-top: 40px; text-align: center; }
   .colhead { font-size: 11px; fill: var(--muted); text-transform: uppercase;
              letter-spacing: .1em; }
-  .nodebox { cursor: pointer; }
+  .nodebox, .groupbox { cursor: pointer; }
   .nodebox rect { fill: var(--panel); stroke: var(--line); rx: 4; }
-  .nodebox:hover rect { stroke: var(--accent); }
+  .groupbox rect { fill: var(--panel); stroke: var(--line);
+                   stroke-dasharray: 5 3; rx: 4; }
+  .nodebox:hover rect, .groupbox:hover rect { stroke: var(--accent); }
   .nodebox.sel rect { stroke: var(--accent); stroke-width: 1.5; }
-  .nodebox text { fill: var(--text); font-size: 11px; pointer-events: none; }
+  .nodebox.hit rect, .groupbox.hit rect { stroke: var(--accent); }
+  .nodebox text, .groupbox text { fill: var(--text); font-size: 11px;
+                                  pointer-events: none; }
+  .nodebox.dim, .groupbox.dim { opacity: .12; }
   .wire { fill: none; stroke-width: 1.4; opacity: .75; cursor: pointer; }
   .wire:hover { stroke-width: 2.6; opacity: 1; }
-  .wire.dim { opacity: .12; }
+  .wire.dim { opacity: .06; }
   .badge { font-size: 10px; }
-  #legend { position: fixed; bottom: 14px; left: 20px; color: var(--muted);
-            font-size: 11px; display: flex; gap: 16px; z-index: 5; }
+  #legend { position: absolute; bottom: 14px; left: 20px; color: var(--muted);
+            font-size: 11px; display: flex; gap: 16px; z-index: 5;
+            pointer-events: none; }
   #legend i { display: inline-block; width: 18px; height: 3px; margin-right: 5px;
               vertical-align: middle; }
 </style>
 </head>
 <body>
+<div id="map">
 <header>
   <h1>wire<span>map</span></h1>
   <span class="stat"><b id="s-wires">0</b> wires</span>
   <span class="stat"><b id="s-flags">0</b> flags</span>
   <span class="stat" style="color:var(--bad)"><b id="s-crit">0</b> critical</span>
+  <input id="search" type="search" placeholder="search label or file…">
+  <label>risk ≥ <span id="riskval" style="color:var(--text)">0</span>
+    <input id="risk" type="range" min="0" max="100" value="0" step="5"></label>
+  <button id="fit" title="reset pan/zoom">fit</button>
 </header>
-<div id="map"><svg id="svg"></svg></div>
-<div id="panel"><div class="empty">Click a node or wire<br>to inspect its evidence</div></div>
+<svg id="svg" preserveAspectRatio="xMinYMin meet"></svg>
 <div id="legend">
   <span><i style="background:var(--ok)"></i>healthy</span>
   <span><i style="background:var(--warn)"></i>at risk</span>
   <span><i style="background:var(--bad)"></i>weak</span>
   <span><i style="background:var(--crit)"></i>critical</span>
   <span><i style="background:var(--muted);height:1px;border-top:1px dashed var(--muted);background:none"></i>inferred wire</span>
+  <span>▸ collapsed file · scroll = zoom · drag = pan</span>
 </div>
+</div>
+<div id="panel"><div class="empty">Click a node or wire<br>to inspect its evidence</div></div>
 <script id="graph-data" type="application/json">__GRAPH_JSON__</script>
 <script>
 const G = JSON.parse(document.getElementById('graph-data').textContent);
 const COLS = ["component","api_call","endpoint","function","db_model"];
 const COLLABEL = {component:"Components", api_call:"API calls",
                   endpoint:"Endpoints", "function":"Functions", db_model:"Models"};
-const COLW = 260, GAP = 90, ROWH = 46, TOP = 70;
+const COLW = 260, GAP = 90, ROWH = 46, TOP = 70, COLLAPSE_LIMIT = 60;
 
-const byCol = {}; COLS.forEach(c => byCol[c] = []);
-G.nodes.forEach(n => (byCol[n.type] || (byCol[n.type]=[])).push(n));
-COLS.forEach(c => byCol[c].sort((a,b) => b.risk_score - a.risk_score));
+const nodesById = {};
+G.nodes.forEach(n => nodesById[n.id] = n);
+const expanded = {};
+COLS.forEach(c => expanded[c] = new Set());
 
-const pos = {};
-COLS.forEach((c,i) => byCol[c].forEach((n,j) => {
-  pos[n.id] = { x: 30 + i*(COLW+GAP), y: TOP + j*ROWH };
-}));
+let riskMin = 0, query = '';
+let vb = null, W = 0, H = 0;
+let nodeRowOf = {}, rowsById = {}, aggWires = [];
 
 function heat(s) {
   if (s >= 70) return "var(--crit)";
@@ -104,61 +133,236 @@ function heat(s) {
   if (s >= 15) return "var(--warn)";
   return "var(--ok)";
 }
-const esc = t => t.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc = t => String(t).replace(/[&<>"]/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+function rowRisk(row) {
+  return row.kind === 'node' ? row.node.risk_score
+       : Math.max(...row.members.map(n => n.risk_score));
+}
+function rowFlags(row) {
+  return row.kind === 'node' ? row.node.risk_flags.length
+       : row.members.reduce((a, n) => a + n.risk_flags.length, 0);
+}
+
+function buildRows() {
+  const byCol = {};
+  COLS.forEach(c => byCol[c] = []);
+  G.nodes.forEach(n => byCol[n.type] && byCol[n.type].push(n));
+  const rows = {};
+  COLS.forEach(c => {
+    const list = byCol[c].slice().sort((a, b) => b.risk_score - a.risk_score);
+    if (list.length <= COLLAPSE_LIMIT) {
+      rows[c] = list.map(n => ({kind: 'node', node: n}));
+      return;
+    }
+    const byFile = new Map();
+    list.forEach(n => {
+      const k = n.file || '(unknown)';
+      if (!byFile.has(k)) byFile.set(k, []);
+      byFile.get(k).push(n);
+    });
+    const out = [];
+    [...byFile.entries()]
+      .sort((a, b) => Math.max(...b[1].map(n => n.risk_score))
+                    - Math.max(...a[1].map(n => n.risk_score)))
+      .forEach(([file, members]) => {
+        const open = expanded[c].has(file);
+        out.push({kind: 'group', col: c, file, members, open});
+        if (open) members.forEach(n => out.push({kind: 'node', node: n}));
+      });
+    rows[c] = out;
+  });
+  return rows;
+}
+
+function render() {
+  const rows = buildRows();
+  const pos = {};
+  nodeRowOf = {}; rowsById = {};
+  let maxRows = 1;
+  COLS.forEach((c, i) => {
+    rows[c].forEach((row, j) => {
+      const id = row.kind === 'node' ? row.node.id : 'grp:' + c + ':' + row.file;
+      row.id = id;
+      pos[id] = {x: 30 + i * (COLW + GAP), y: TOP + j * ROWH};
+      rowsById[id] = row;
+      if (row.kind === 'node') nodeRowOf[row.node.id] = id;
+      else if (!row.open) row.members.forEach(n => nodeRowOf[n.id] = id);
+    });
+    maxRows = Math.max(maxRows, rows[c].length);
+  });
+  W = 30 + COLS.length * (COLW + GAP);
+  H = TOP + maxRows * ROWH + 60;
+  if (!vb) vb = {x: 0, y: 0, w: W, h: H};
+
+  // aggregate wires between visible rows (collapsed members share a row)
+  const agg = new Map();
+  G.edges.forEach(e => {
+    const s = nodeRowOf[e.source], t = nodeRowOf[e.target];
+    if (!s || !t || s === t) return;
+    const k = s + '=>' + t;
+    const cur = agg.get(k) ||
+      {s, t, risk: 0, count: 0, conf: 'certain', edge: e};
+    cur.risk = Math.max(cur.risk, e.risk_score);
+    cur.count += 1;
+    if (e.confidence === 'inferred' ||
+        (e.confidence === 'probable' && cur.conf === 'certain'))
+      cur.conf = e.confidence;
+    agg.set(k, cur);
+  });
+  aggWires = [...agg.values()];
+
+  let html = '';
+  COLS.forEach((c, i) => {
+    if (rows[c].length)
+      html += `<text class="colhead" x="${30 + i * (COLW + GAP)}" y="${TOP - 22}">${COLLABEL[c]}</text>`;
+  });
+
+  aggWires.forEach((w, wi) => {
+    const a = pos[w.s], b = pos[w.t];
+    if (!a || !b) return;
+    const x1 = a.x + COLW, y1 = a.y + 14, x2 = b.x, y2 = b.y + 14;
+    const mx = (x1 + x2) / 2;
+    const dash = w.conf === 'inferred' ? 'stroke-dasharray="5 4"' :
+                 w.conf === 'probable' ? 'stroke-dasharray="10 3"' : '';
+    const width = w.count > 1 ? ` stroke-width="${Math.min(1.4 + w.count * .3, 4)}"` : '';
+    html += `<path class="wire" data-wi="${wi}" ${dash}${width}
+      d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}"
+      stroke="${heat(w.risk)}"/>`;
+  });
+
+  Object.values(rowsById).forEach(row => {
+    const p = pos[row.id];
+    const risk = rowRisk(row), nf = rowFlags(row);
+    if (row.kind === 'node') {
+      const n = row.node;
+      const label = n.label.length > 30 ? n.label.slice(0, 29) + '…' : n.label;
+      html += `<g class="nodebox" data-nid="${esc(n.id)}" transform="translate(${p.x},${p.y})">
+        <rect width="${COLW}" height="30"/>
+        <circle cx="12" cy="15" r="4" fill="${heat(risk)}"/>
+        <text x="24" y="19">${esc(label)}</text>
+        ${nf ? `<text class="badge" x="${COLW - 10}" y="19" text-anchor="end"
+           fill="${heat(risk)}">${nf}⚑</text>` : ''}
+      </g>`;
+    } else {
+      const cap = row.file.length > 24 ? '…' + row.file.slice(-23) : row.file;
+      const label = `${row.open ? '▾' : '▸'} ${cap} (${row.members.length})`;
+      html += `<g class="groupbox" data-col="${esc(row.col)}" data-file="${esc(row.file)}"
+        transform="translate(${p.x},${p.y})">
+        <rect width="${COLW}" height="30"/>
+        <circle cx="12" cy="15" r="4" fill="${heat(risk)}"/>
+        <text x="24" y="19">${esc(label)}</text>
+        ${nf ? `<text class="badge" x="${COLW - 10}" y="19" text-anchor="end"
+           fill="${heat(risk)}">${nf}⚑</text>` : ''}
+      </g>`;
+    }
+  });
+  svg.innerHTML = html;
+  applyViewBox();
+  applyFilters();
+}
+
+// ---- filters ---------------------------------------------------------------
+function rowMatches(row) {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  if (row.kind === 'node')
+    return (row.node.label + ' ' + row.node.file).toLowerCase().includes(q);
+  return row.file.toLowerCase().includes(q) ||
+         row.members.some(n => n.label.toLowerCase().includes(q));
+}
+function rowVisible(row) {
+  return rowRisk(row) >= riskMin && rowMatches(row);
+}
+function applyFilters() {
+  document.querySelectorAll('.nodebox, .groupbox').forEach(el => {
+    const row = rowsById[el.classList.contains('nodebox')
+      ? el.dataset.nid : 'grp:' + el.dataset.col + ':' + el.dataset.file];
+    if (!row) return;
+    el.classList.toggle('dim', !rowVisible(row));
+    el.classList.toggle('hit', !!query && rowMatches(row) && rowRisk(row) >= riskMin);
+  });
+  document.querySelectorAll('.wire').forEach(el => {
+    const w = aggWires[+el.dataset.wi];
+    if (!w) return;
+    const ends = rowVisible(rowsById[w.s]) || rowVisible(rowsById[w.t]);
+    el.classList.toggle('dim', w.risk < riskMin || (!!query && !ends));
+  });
+}
+
+// ---- pan / zoom (viewBox manipulation, no libraries) -----------------------
 const svg = document.getElementById('svg');
-const maxRows = Math.max(...COLS.map(c => byCol[c].length), 1);
-const W = 30 + COLS.length*(COLW+GAP), H = TOP + maxRows*ROWH + 60;
-svg.setAttribute('width', W); svg.setAttribute('height', H);
+function applyViewBox() {
+  svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+}
+function clientToSvg(cx, cy) {
+  const r = svg.getBoundingClientRect();
+  return {x: vb.x + (cx - r.left) / r.width * vb.w,
+          y: vb.y + (cy - r.top) / r.height * vb.h};
+}
+const map = document.getElementById('map');
+map.addEventListener('wheel', ev => {
+  ev.preventDefault();
+  if (!svg.getBoundingClientRect().width) return;   // not laid out yet
+  const f = ev.deltaY > 0 ? 1.15 : 1 / 1.15;
+  const newW = Math.min(Math.max(vb.w * f, W / 20), W * 4);
+  const scale = newW / vb.w;
+  const pt = clientToSvg(ev.clientX, ev.clientY);
+  vb.x = pt.x - (pt.x - vb.x) * scale;
+  vb.y = pt.y - (pt.y - vb.y) * scale;
+  vb.w *= scale;
+  vb.h *= scale;
+  applyViewBox();
+}, {passive: false});
 
-let html = '';
-COLS.forEach((c,i) => {
-  if (byCol[c].length)
-    html += `<text class="colhead" x="${30+i*(COLW+GAP)}" y="${TOP-22}">${COLLABEL[c]}</text>`;
+let dragging = null, dragMoved = false;
+map.addEventListener('mousedown', ev => {
+  if (ev.button !== 0 || ev.target.closest('header, #legend')) return;
+  dragging = {cx: ev.clientX, cy: ev.clientY, x: vb.x, y: vb.y};
+  dragMoved = false;
+});
+window.addEventListener('mousemove', ev => {
+  if (!dragging) return;
+  const dx = ev.clientX - dragging.cx, dy = ev.clientY - dragging.cy;
+  if (Math.abs(dx) + Math.abs(dy) > 4) dragMoved = true;
+  if (!dragMoved) return;
+  map.classList.add('panning');
+  const r = svg.getBoundingClientRect();
+  if (!r.width) return;
+  vb.x = dragging.x - dx / r.width * vb.w;
+  vb.y = dragging.y - dy / r.height * vb.h;
+  applyViewBox();
+});
+window.addEventListener('mouseup', () => {
+  dragging = null;
+  map.classList.remove('panning');
+});
+document.getElementById('fit').addEventListener('click', () => {
+  vb = {x: 0, y: 0, w: W, h: H};
+  applyViewBox();
 });
 
-// wires first (under nodes)
-G.edges.forEach(e => {
-  const a = pos[e.source], b = pos[e.target];
-  if (!a || !b) return;
-  const x1 = a.x + COLW, y1 = a.y + 14, x2 = b.x, y2 = b.y + 14;
-  const mx = (x1+x2)/2;
-  const dash = e.confidence === 'inferred' ? 'stroke-dasharray="5 4"' :
-               e.confidence === 'probable' ? 'stroke-dasharray="10 3"' : '';
-  html += `<path class="wire" data-eid="${esc(e.id)}" ${dash}
-    d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}"
-    stroke="${heat(e.risk_score)}"/>`;
+// ---- controls ---------------------------------------------------------------
+document.getElementById('search').addEventListener('input', ev => {
+  query = ev.target.value.trim();
+  applyFilters();
+});
+document.getElementById('risk').addEventListener('input', ev => {
+  riskMin = +ev.target.value;
+  document.getElementById('riskval').textContent = riskMin;
+  applyFilters();
 });
 
-G.nodes.forEach(n => {
-  const p = pos[n.id]; if (!p) return;
-  const label = n.label.length > 30 ? n.label.slice(0,29)+'…' : n.label;
-  const nf = n.risk_flags.length;
-  html += `<g class="nodebox" data-nid="${esc(n.id)}" transform="translate(${p.x},${p.y})">
-    <rect width="${COLW}" height="30"/>
-    <circle cx="12" cy="15" r="4" fill="${heat(n.risk_score)}"/>
-    <text x="24" y="19">${esc(label)}</text>
-    ${nf ? `<text class="badge" x="${COLW-10}" y="19" text-anchor="end"
-       fill="${heat(n.risk_score)}">${nf}⚑</text>` : ''}
-  </g>`;
-});
-svg.innerHTML = html;
-
-document.getElementById('s-wires').textContent =
-  G.edges.filter(e => e.type === 'http').length;
-const allFlags = G.nodes.flatMap(n => n.risk_flags);
-document.getElementById('s-flags').textContent = allFlags.length;
-document.getElementById('s-crit').textContent =
-  allFlags.filter(f => f.severity === 'critical').length;
-
+// ---- panel ------------------------------------------------------------------
 const panel = document.getElementById('panel');
 function show(item, kind) {
   document.querySelectorAll('.nodebox.sel').forEach(el => el.classList.remove('sel'));
   const flags = item.risk_flags || [];
   panel.innerHTML = `
     <h2>${esc(item.label || item.id)}</h2>
-    <div class="loc">${esc(item.file || '')}${item.line ? ':'+item.line : ''}
-      &nbsp;·&nbsp; ${kind}${item.confidence ? ' · '+item.confidence : ''}</div>
+    <div class="loc">${esc(item.file || '')}${item.line ? ':' + item.line : ''}
+      &nbsp;·&nbsp; ${kind}${item.confidence ? ' · ' + item.confidence : ''}</div>
     <div class="score" style="color:${heat(item.risk_score)}">${item.risk_score}
       <span style="font-size:12px;color:var(--muted)">/100 risk</span></div>
     ${item.meta && item.meta.coverage_pct !== undefined ? `
@@ -186,30 +390,52 @@ function show(item, kind) {
 }
 
 svg.addEventListener('click', ev => {
+  if (dragMoved) { dragMoved = false; return; }
+  const gb = ev.target.closest('.groupbox');
+  if (gb) {
+    const {col, file} = gb.dataset;
+    expanded[col].has(file) ? expanded[col].delete(file) : expanded[col].add(file);
+    render();
+    return;
+  }
   const nb = ev.target.closest('.nodebox');
   if (nb) {
-    nb.classList.add('sel');
-    const n = G.nodes.find(x => x.id === nb.dataset.nid);
+    const n = nodesById[nb.dataset.nid];
     if (n) show(n, n.type);
-    // dim unrelated wires
+    nb.classList.add('sel');
     document.querySelectorAll('.wire').forEach(w => {
-      const e = G.edges.find(x => x.id === w.dataset.eid);
-      w.classList.toggle('dim', !(e && (e.source === n.id || e.target === n.id)));
+      const wi = aggWires[+w.dataset.wi];
+      w.classList.toggle('dim', !(wi && (wi.s === nodeRowOf[n.id] ||
+                                         wi.t === nodeRowOf[n.id])));
     });
     return;
   }
   const wire = ev.target.closest('.wire');
   if (wire) {
-    const e = G.edges.find(x => x.id === wire.dataset.eid);
-    if (e) {
-      const s = G.nodes.find(x => x.id === e.source);
-      const t = G.nodes.find(x => x.id === e.target);
-      show({ ...e, label: `${s ? s.label : e.source}  ⟶  ${t ? t.label : e.target}`,
-             risk_flags: [...(e.risk_flags||[]), ...(s ? s.risk_flags : []),
-                          ...(t ? t.risk_flags : [])] }, 'wire · ' + e.type);
+    const w = aggWires[+wire.dataset.wi];
+    if (!w) return;
+    if (w.count === 1) {
+      const e = w.edge;
+      const s = nodesById[e.source], t = nodesById[e.target];
+      show({...e, label: `${s ? s.label : e.source}  ⟶  ${t ? t.label : e.target}`,
+            risk_flags: [...(e.risk_flags || []), ...(s ? s.risk_flags : []),
+                         ...(t ? t.risk_flags : [])]}, 'wire · ' + e.type);
+    } else {
+      show({id: w.s + ' ⟶ ' + w.t, label: `${w.count} wires (bundled)`,
+            risk_score: w.risk, risk_flags: []}, 'wire bundle');
     }
   }
 });
+
+// ---- stats ------------------------------------------------------------------
+document.getElementById('s-wires').textContent =
+  G.edges.filter(e => e.type === 'http').length;
+const allFlags = G.nodes.flatMap(n => n.risk_flags);
+document.getElementById('s-flags').textContent = allFlags.length;
+document.getElementById('s-crit').textContent =
+  allFlags.filter(f => f.severity === 'critical').length;
+
+render();
 </script>
 </body>
 </html>

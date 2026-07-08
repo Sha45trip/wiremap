@@ -151,9 +151,10 @@ case that must fire and a neighbor that must not. Precision beats recall.
 Done: test harness, incremental scans, coverage mapping, runtime telemetry
 collector, contract checking (Pydantic `response_model` field sets vs the
 fields the frontend actually reads — declared models only, exact field
-names, so it never guesses). Next, in order:
+names, so it never guesses), viewer scalability (wheel-zoom/drag-pan,
+risk-threshold slider, search, collapse-by-file above 60 nodes per column —
+still a single self-contained HTML file). Phase 2 is complete. Next:
 
-- **Viewer scalability** — pan/zoom, risk filter, search, group-by-file.
 - **Team mode** — Docker self-hosted (collector + viewer service),
   `wiremap diff` + GitHub Action PR comments with `--fail-on critical`
   merge gating, Django/Flask-blueprint/React-Query/OpenAPI adapters,
