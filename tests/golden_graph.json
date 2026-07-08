@@ -215,7 +215,7 @@
       "file": "app/main.py",
       "line": 22,
       "meta": {
-        "handler": "get_order",
+        "handler": "app.main.get_order",
         "framework": "fastapi",
         "has_auth": true,
         "raw_path": "/api/orders/{order_id}",
@@ -236,7 +236,7 @@
       "file": "app/main.py",
       "line": 30,
       "meta": {
-        "handler": "report_summary",
+        "handler": "app.main.report_summary",
         "framework": "fastapi",
         "has_auth": true,
         "raw_path": "/api/reports/summary",
@@ -261,7 +261,7 @@
       "file": "app/main.py",
       "line": 10,
       "meta": {
-        "handler": "get_user",
+        "handler": "app.main.get_user",
         "framework": "fastapi",
         "has_auth": true,
         "raw_path": "/api/users/{user_id}",
@@ -286,7 +286,7 @@
       "file": "app/main.py",
       "line": 15,
       "meta": {
-        "handler": "create_order",
+        "handler": "app.main.create_order",
         "framework": "fastapi",
         "has_auth": false,
         "raw_path": "/api/orders",
@@ -299,7 +299,7 @@
           "severity": "high",
           "category": "security",
           "message": "POST endpoint has no detectable auth dependency",
-          "evidence": "app/main.py:15 handler `create_order`",
+          "evidence": "app/main.py:15 handler `app.main.create_order`",
           "suggestion": "Add an auth dependency (e.g. Depends(get_current_user)) or mark it public intentionally"
         },
         {
@@ -321,40 +321,43 @@
       ]
     },
     {
-      "id": "fn:calc_totals",
+      "id": "fn:app.services.calc_totals",
       "type": "function",
       "label": "calc_totals",
       "file": "app/services.py",
       "line": 6,
       "meta": {
         "complexity": 3,
-        "end_line": 11
+        "end_line": 11,
+        "module": "app.services"
       },
       "risk_score": 0.0,
       "risk_flags": []
     },
     {
-      "id": "fn:fetch_orders",
+      "id": "fn:app.services.fetch_orders",
       "type": "function",
       "label": "fetch_orders",
       "file": "app/services.py",
       "line": 3,
       "meta": {
         "complexity": 1,
-        "end_line": 4
+        "end_line": 4,
+        "module": "app.services"
       },
       "risk_score": 0.0,
       "risk_flags": []
     },
     {
-      "id": "fn:log_event",
+      "id": "fn:app.services.log_event",
       "type": "function",
       "label": "log_event",
       "file": "app/services.py",
       "line": 13,
       "meta": {
         "complexity": 1,
-        "end_line": 14
+        "end_line": 14,
+        "module": "app.services"
       },
       "risk_score": 0.0,
       "risk_flags": []
@@ -441,9 +444,9 @@
       "risk_flags": []
     },
     {
-      "id": "ep:GET /api/orders/{order_id}->fn:calc_totals",
+      "id": "ep:GET /api/orders/{order_id}->fn:app.services.calc_totals",
       "source": "ep:GET /api/orders/{order_id}",
-      "target": "fn:calc_totals",
+      "target": "fn:app.services.calc_totals",
       "type": "calls",
       "confidence": "certain",
       "meta": {},
@@ -451,9 +454,9 @@
       "risk_flags": []
     },
     {
-      "id": "ep:GET /api/orders/{order_id}->fn:fetch_orders",
+      "id": "ep:GET /api/orders/{order_id}->fn:app.services.fetch_orders",
       "source": "ep:GET /api/orders/{order_id}",
-      "target": "fn:fetch_orders",
+      "target": "fn:app.services.fetch_orders",
       "type": "calls",
       "confidence": "certain",
       "meta": {},
@@ -461,9 +464,9 @@
       "risk_flags": []
     },
     {
-      "id": "ep:GET /api/reports/summary->fn:calc_totals",
+      "id": "ep:GET /api/reports/summary->fn:app.services.calc_totals",
       "source": "ep:GET /api/reports/summary",
-      "target": "fn:calc_totals",
+      "target": "fn:app.services.calc_totals",
       "type": "calls",
       "confidence": "certain",
       "meta": {},
@@ -471,9 +474,9 @@
       "risk_flags": []
     },
     {
-      "id": "ep:GET /api/reports/summary->fn:fetch_orders",
+      "id": "ep:GET /api/reports/summary->fn:app.services.fetch_orders",
       "source": "ep:GET /api/reports/summary",
-      "target": "fn:fetch_orders",
+      "target": "fn:app.services.fetch_orders",
       "type": "calls",
       "confidence": "certain",
       "meta": {},
@@ -491,9 +494,9 @@
       "risk_flags": []
     },
     {
-      "id": "ep:POST /api/orders->fn:log_event",
+      "id": "ep:POST /api/orders->fn:app.services.log_event",
       "source": "ep:POST /api/orders",
-      "target": "fn:log_event",
+      "target": "fn:app.services.log_event",
       "type": "calls",
       "confidence": "certain",
       "meta": {},
@@ -501,8 +504,8 @@
       "risk_flags": []
     },
     {
-      "id": "fn:fetch_orders->q:Order",
-      "source": "fn:fetch_orders",
+      "id": "fn:app.services.fetch_orders->q:Order",
+      "source": "fn:app.services.fetch_orders",
       "target": "db:Order",
       "type": "queries",
       "confidence": "certain",

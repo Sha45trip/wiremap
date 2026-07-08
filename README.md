@@ -118,7 +118,9 @@ untested endpoint handlers are flagged.
 - React call sites: `fetch()`, `axios.get/post/put/delete/patch`, generic
   `api.*`/`client.*` wrappers, with template-literal URL resolution
 - Cross-stack matching: `` `/api/users/${id}` `` ↔ `/api/users/{user_id}`
-- Backend call graph: handler → services → ORM models (SQLAlchemy)
+- Backend call graph: handler → services → ORM models (SQLAlchemy),
+  module-qualified via import tracking (`from .services import x` resolves
+  to `app.services.x` — same-named functions in different modules stay apart)
 - Confidence per wire: certain / probable / inferred (dashed in the viewer)
 
 **Risk flags** (each with evidence + suggested fix)
@@ -198,11 +200,12 @@ names, so it never guesses), viewer scalability (wheel-zoom/drag-pan,
 risk-threshold slider, search, collapse-by-file above 60 nodes per column —
 still a single self-contained HTML file), Docker self-hosted team mode
 (`wiremap serve` + Dockerfile/compose, WIREMAP_TOKEN), CI integration
-(`wiremap diff` + GitHub Action with `--fail-on` merge gating). Next:
+(`wiremap diff` + GitHub Action with `--fail-on` merge gating), and a
+module-qualified call graph (import-tracked resolution — no cross-module
+name collisions). Next:
 
 - **Framework adapters** — Django, Flask blueprints, React Query,
   generated OpenAPI clients.
-- **Module-qualified call graph** — removes cross-module name collisions.
 
 ## Extending
 

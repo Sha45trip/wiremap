@@ -92,7 +92,7 @@ class TestApplyCoverage:
         assert "untested_handler" not in flags(ep)
 
     def test_function_nodes_get_pct_but_never_flag(self, graph):
-        fn = graph.nodes["fn:load_items"]
+        fn = graph.nodes["fn:app.services.load_items"]
         body = body_lines(fn, "end_line")
         apply_coverage(graph, report_for({fn.file: ([], body)}))
         assert fn.meta["coverage_pct"] == 0.0
@@ -163,7 +163,7 @@ class TestCliAcceptance:
         assert not any(fl["code"] == "untested_handler"
                        for fl in get_user["risk_flags"])
 
-        assert nodes["fn:log_event"]["meta"]["coverage_pct"] == 0.0
+        assert nodes["fn:app.services.log_event"]["meta"]["coverage_pct"] == 0.0
 
     def test_unreadable_coverage_report_exits_2(self, demo_copy, capsys):
         rc = cli.main(["scan", str(demo_copy), "--coverage", "missing.json"])

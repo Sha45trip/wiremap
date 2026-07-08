@@ -22,6 +22,7 @@ class TestRouteDiscovery:
             EP_GET_ITEM, EP_CREATE, EP_DELETE, EP_BRANCHY, EP_HEALTH, EP_PING,
             "ep:GET /contract/item", "ep:GET /contract/item2",
             "ep:GET /contract/items", "ep:GET /contract/raw",
+            "ep:GET /calc/price", "ep:GET /calc/tax",
         }
 
     def test_apirouter_prefix_applied(self, backend_graph):
@@ -42,9 +43,9 @@ class TestRouteDiscovery:
 
 class TestCallGraphAndOrm:
     def test_handler_call_walked_to_service_function(self, backend_graph):
-        assert "fn:load_items" in backend_graph.nodes
+        assert "fn:app.services.load_items" in backend_graph.nodes
         edge_ids = set(backend_graph.edges)
-        assert f"{EP_GET_ITEM}->fn:load_items" in edge_ids
+        assert f"{EP_GET_ITEM}->fn:app.services.load_items" in edge_ids
 
     def test_orm_model_nodes_created(self, backend_graph):
         models = {n.label for n in backend_graph.nodes_of(NodeType.DB_MODEL)}
@@ -52,8 +53,8 @@ class TestCallGraphAndOrm:
 
     def test_query_edge_from_service_to_model(self, backend_graph):
         queries = backend_graph.edges_of(EdgeType.QUERIES)
-        assert any(e.source == "fn:load_items" and e.target == "db:Item"
-                   for e in queries)
+        assert any(e.source == "fn:app.services.load_items"
+                   and e.target == "db:Item" for e in queries)
 
 
 class TestPlantedFlags:
