@@ -42,6 +42,45 @@
       ]
     },
     {
+      "id": "call:src/OrderForm.jsx:10",
+      "type": "api_call",
+      "label": "GET /api/orders/:param",
+      "file": "src/OrderForm.jsx",
+      "line": 10,
+      "meta": {
+        "method": "GET",
+        "url": "/api/orders/:param",
+        "confidence": "probable",
+        "has_error_handling": true,
+        "has_timeout": false,
+        "expected_fields": [
+          "id",
+          "status",
+          "total"
+        ],
+        "fields_confidence": "inferred"
+      },
+      "risk_score": 50.0,
+      "risk_flags": [
+        {
+          "code": "contract_mismatch",
+          "severity": "high",
+          "category": "contract",
+          "message": "Frontend reads status \u2014 not declared by response model OrderOut",
+          "evidence": "src/OrderForm.jsx:10 reads id, status, total; app/main.py:22 declares id, total",
+          "suggestion": "Add the field to the response model or stop reading it \u2014 it is undefined at runtime"
+        },
+        {
+          "code": "no_timeout",
+          "severity": "low",
+          "category": "operational",
+          "message": "API call has no timeout/abort signal",
+          "evidence": "src/OrderForm.jsx:10 `GET /api/orders/:param`",
+          "suggestion": "Pass an AbortController signal or axios timeout"
+        }
+      ]
+    },
+    {
       "id": "call:src/OrderForm.jsx:6",
       "type": "api_call",
       "label": "POST /api/orders",
@@ -70,31 +109,6 @@
           "category": "operational",
           "message": "API call has no timeout/abort signal",
           "evidence": "src/OrderForm.jsx:6 `POST /api/orders`",
-          "suggestion": "Pass an AbortController signal or axios timeout"
-        }
-      ]
-    },
-    {
-      "id": "call:src/OrderForm.jsx:9",
-      "type": "api_call",
-      "label": "GET /api/orders/:param",
-      "file": "src/OrderForm.jsx",
-      "line": 9,
-      "meta": {
-        "method": "GET",
-        "url": "/api/orders/:param",
-        "confidence": "probable",
-        "has_error_handling": true,
-        "has_timeout": false
-      },
-      "risk_score": 5.0,
-      "risk_flags": [
-        {
-          "code": "no_timeout",
-          "severity": "low",
-          "category": "operational",
-          "message": "API call has no timeout/abort signal",
-          "evidence": "src/OrderForm.jsx:9 `GET /api/orders/:param`",
           "suggestion": "Pass an AbortController signal or axios timeout"
         }
       ]
@@ -199,13 +213,18 @@
       "type": "endpoint",
       "label": "GET /api/orders/{order_id}",
       "file": "app/main.py",
-      "line": 21,
+      "line": 22,
       "meta": {
         "handler": "get_order",
         "framework": "fastapi",
         "has_auth": true,
         "raw_path": "/api/orders/{order_id}",
-        "handler_end_line": 26
+        "handler_end_line": 27,
+        "response_model": "OrderOut",
+        "response_fields": [
+          "id",
+          "total"
+        ]
       },
       "risk_score": 0.0,
       "risk_flags": []
@@ -215,13 +234,13 @@
       "type": "endpoint",
       "label": "GET /api/reports/summary",
       "file": "app/main.py",
-      "line": 29,
+      "line": 30,
       "meta": {
         "handler": "report_summary",
         "framework": "fastapi",
         "has_auth": true,
         "raw_path": "/api/reports/summary",
-        "handler_end_line": 31
+        "handler_end_line": 32
       },
       "risk_score": 7.5,
       "risk_flags": [
@@ -230,7 +249,7 @@
           "severity": "low",
           "category": "contract",
           "message": "No frontend call site references this endpoint",
-          "evidence": "app/main.py:29",
+          "evidence": "app/main.py:30",
           "suggestion": "Dead code, an external consumer, or missing frontend work \u2014 verify and document"
         }
       ]
@@ -240,13 +259,13 @@
       "type": "endpoint",
       "label": "GET /api/users/{user_id}",
       "file": "app/main.py",
-      "line": 9,
+      "line": 10,
       "meta": {
         "handler": "get_user",
         "framework": "fastapi",
         "has_auth": true,
         "raw_path": "/api/users/{user_id}",
-        "handler_end_line": 11
+        "handler_end_line": 12
       },
       "risk_score": 30.0,
       "risk_flags": [
@@ -255,7 +274,7 @@
           "severity": "high",
           "category": "quality",
           "message": "Handler performs I/O with no try/except",
-          "evidence": "app/main.py:10 calls `get` outside any try block",
+          "evidence": "app/main.py:11 calls `get` outside any try block",
           "suggestion": "Wrap I/O in try/except and return a controlled error response"
         }
       ]
@@ -265,13 +284,13 @@
       "type": "endpoint",
       "label": "POST /api/orders",
       "file": "app/main.py",
-      "line": 14,
+      "line": 15,
       "meta": {
         "handler": "create_order",
         "framework": "fastapi",
         "has_auth": false,
         "raw_path": "/api/orders",
-        "handler_end_line": 18
+        "handler_end_line": 19
       },
       "risk_score": 100,
       "risk_flags": [
@@ -280,7 +299,7 @@
           "severity": "high",
           "category": "security",
           "message": "POST endpoint has no detectable auth dependency",
-          "evidence": "app/main.py:14 handler `create_order`",
+          "evidence": "app/main.py:15 handler `create_order`",
           "suggestion": "Add an auth dependency (e.g. Depends(get_current_user)) or mark it public intentionally"
         },
         {
@@ -288,7 +307,7 @@
           "severity": "high",
           "category": "quality",
           "message": "Handler performs I/O with no try/except",
-          "evidence": "app/main.py:16 calls `execute` outside any try block",
+          "evidence": "app/main.py:17 calls `execute` outside any try block",
           "suggestion": "Wrap I/O in try/except and return a controlled error response"
         },
         {
@@ -296,7 +315,7 @@
           "severity": "critical",
           "category": "security",
           "message": "Raw SQL built with string interpolation",
-          "evidence": "app/main.py:16 `f\"INSERT INTO orders VALUES ({payload['id']})\"`",
+          "evidence": "app/main.py:17 `f\"INSERT INTO orders VALUES ({payload['id']})\"`",
           "suggestion": "Use parameterized queries or the ORM"
         }
       ]
@@ -343,6 +362,19 @@
   ],
   "edges": [
     {
+      "id": "call:src/OrderForm.jsx:10=>ep:GET /api/orders/{order_id}",
+      "source": "call:src/OrderForm.jsx:10",
+      "target": "ep:GET /api/orders/{order_id}",
+      "type": "http",
+      "confidence": "probable",
+      "meta": {
+        "method": "GET",
+        "pattern": "/api/orders/:p"
+      },
+      "risk_score": 40.0,
+      "risk_flags": []
+    },
+    {
       "id": "call:src/OrderForm.jsx:6=>ep:POST /api/orders",
       "source": "call:src/OrderForm.jsx:6",
       "target": "ep:POST /api/orders",
@@ -353,19 +385,6 @@
         "pattern": "/api/orders"
       },
       "risk_score": 80.0,
-      "risk_flags": []
-    },
-    {
-      "id": "call:src/OrderForm.jsx:9=>ep:GET /api/orders/{order_id}",
-      "source": "call:src/OrderForm.jsx:9",
-      "target": "ep:GET /api/orders/{order_id}",
-      "type": "http",
-      "confidence": "probable",
-      "meta": {
-        "method": "GET",
-        "pattern": "/api/orders/:p"
-      },
-      "risk_score": 4.0,
       "risk_flags": []
     },
     {
@@ -392,13 +411,13 @@
       "risk_flags": []
     },
     {
-      "id": "cmp:loadOrder->call:src/OrderForm.jsx:9",
+      "id": "cmp:loadOrder->call:src/OrderForm.jsx:10",
       "source": "cmp:loadOrder",
-      "target": "call:src/OrderForm.jsx:9",
+      "target": "call:src/OrderForm.jsx:10",
       "type": "makes_call",
       "confidence": "certain",
       "meta": {},
-      "risk_score": 4.0,
+      "risk_score": 40.0,
       "risk_flags": []
     },
     {

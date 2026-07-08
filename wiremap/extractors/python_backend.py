@@ -31,6 +31,7 @@ class RouteInfo:
     framework: str
     has_auth_dep: bool = False
     router_prefix: str = ""
+    response_model: str = ""   # bare Name from response_model= or -> annotation
 
 
 @dataclass
@@ -57,6 +58,7 @@ class _ModuleVisitor(ast.NodeVisitor):
         self.functions: dict[str, FunctionInfo] = {}
         self.router_prefixes: dict[str, str] = {}   # var name -> prefix
         self.orm_models: list[tuple[str, int]] = []
+        self.pydantic_models: dict[str, dict] = {}  # name -> {fields, bases}
         self._class_stack: list[str] = []
 
     # --- router prefix detection: APIRouter(prefix="/api/users") ---
@@ -80,6 +82,10 @@ class _ModuleVisitor(ast.NodeVisitor):
             bases.append(b.attr if isinstance(b, ast.Attribute) else getattr(b, "id", ""))
         if any(b in ("Base", "Model", "DeclarativeBase") for b in bases):
             self.orm_models.append((node.name, node.lineno))
+        if "BaseModel" in bases or any(b in self.pydantic_models for b in bases):
+            fields = [s.target.id for s in node.body
+                      if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)]
+            self.pydantic_models[node.name] = {"fields": fields, "bases": bases}
         self._class_stack.append(node.name)
         self.generic_visit(node)
         self._class_stack.pop()
@@ -125,11 +131,19 @@ class _ModuleVisitor(ast.NodeVisitor):
             if dec.args and isinstance(dec.args[0], ast.Constant):
                 path = str(dec.args[0].value)
             prefix = self.router_prefixes.get(owner, "")
+            # response model: bare-Name only — List[X]/Optional[X] are not a
+            # CERTAIN field set, and the precision rule says skip those
+            response_model = ""
+            for kw in dec.keywords:
+                if kw.arg == "response_model" and isinstance(kw.value, ast.Name):
+                    response_model = kw.value.id
+            if not response_model and isinstance(fn_node.returns, ast.Name):
+                response_model = fn_node.returns.id
             return RouteInfo(
                 method=f.attr.upper(), path=path, handler=qname,
                 file=self.rel, line=fn_node.lineno, framework="fastapi",
                 has_auth_dep=self._has_auth_dependency(fn_node),
-                router_prefix=prefix,
+                router_prefix=prefix, response_model=response_model,
             )
         # Flask: @app.route("/x", methods=["POST"])
         if isinstance(f, ast.Attribute) and f.attr == "route":
@@ -241,7 +255,22 @@ def _parse_source(source: str, rel: str) -> dict:
         "routes": [asdict(r) for r in v.routes],
         "functions": {q: asdict(fi) for q, fi in v.functions.items()},
         "models": [[m, ln] for m, ln in v.orm_models],
+        "pydantic_models": v.pydantic_models,
     }
+
+
+def _resolve_model_fields(name: str, models: dict[str, dict],
+                          seen: frozenset = frozenset()) -> list[str]:
+    """Own fields plus inherited ones from other collected models."""
+    if name not in models or name in seen:
+        return []
+    info = models[name]
+    fields = list(info["fields"])
+    for base in info["bases"]:
+        for f in _resolve_model_fields(base, models, seen | {name}):
+            if f not in fields:
+                fields.append(f)
+    return fields
 
 
 def extract_backend(root: str, graph: Graph,
@@ -250,6 +279,7 @@ def extract_backend(root: str, graph: Graph,
     all_functions: dict[str, FunctionInfo] = {}
     all_routes: list[RouteInfo] = []
     all_models: list[tuple[str, str, int]] = []
+    all_pydantic: dict[str, dict] = {}
     files_parsed = files_cached = 0
     seen_files: set[str] = set()
 
@@ -277,6 +307,7 @@ def extract_backend(root: str, graph: Graph,
             all_functions.update(
                 {q: FunctionInfo(**fi) for q, fi in data["functions"].items()})
             all_models.extend((m, rel, ln) for m, ln in data["models"])
+            all_pydantic.update(data.get("pydantic_models", {}))
 
     if cache:
         cache.prune("backend", seen_files)
@@ -293,12 +324,16 @@ def extract_backend(root: str, graph: Graph,
         full_path = (r.router_prefix.rstrip("/") + "/" + r.path.lstrip("/")).rstrip("/") or "/"
         ep_id = f"ep:{r.method} {full_path}"
         info = all_functions.get(r.handler)
+        meta = {"handler": r.handler, "framework": r.framework,
+                "has_auth": r.has_auth_dep, "raw_path": full_path,
+                "handler_end_line": info.end_line if info else 0}
+        if r.response_model and r.response_model in all_pydantic:
+            meta["response_model"] = r.response_model
+            meta["response_fields"] = sorted(
+                _resolve_model_fields(r.response_model, all_pydantic))
         graph.add_node(Node(
             id=ep_id, type=NodeType.ENDPOINT, label=f"{r.method} {full_path}",
-            file=r.file, line=r.line,
-            meta={"handler": r.handler, "framework": r.framework,
-                  "has_auth": r.has_auth_dep, "raw_path": full_path,
-                  "handler_end_line": info.end_line if info else 0},
+            file=r.file, line=r.line, meta=meta,
         ))
         _walk_calls(graph, ep_id, r.handler, all_functions, depth=0, seen=set())
 

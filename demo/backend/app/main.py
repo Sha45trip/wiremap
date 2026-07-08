@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends
 from .auth import get_current_user
 from .services import fetch_orders, calc_totals, log_event
 from .models import User, Order
+from .schemas import OrderOut
 
 app = FastAPI()
 
@@ -17,7 +18,7 @@ def create_order(payload: dict):
     log_event("order_created")
     return order
 
-@app.get("/api/orders/{order_id}")
+@app.get("/api/orders/{order_id}", response_model=OrderOut)
 def get_order(order_id: int, user=Depends(get_current_user)):
     try:
         orders = fetch_orders(order_id)

@@ -13,7 +13,7 @@ import hashlib
 import json
 import os
 
-CACHE_VERSION = 1
+CACHE_VERSION = 2   # v2: backend pydantic_models + response_model, frontend expected_fields
 
 
 def content_hash(data: bytes) -> str:

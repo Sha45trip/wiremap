@@ -61,6 +61,26 @@ def match(graph: Graph) -> dict:
             ))
             matched += 1
             matched_endpoint_ids.add(ep.id)
+            # contract check: backend field set must be CERTAIN (declared
+            # response model); frontend reads are inferred but exact names
+            declared = ep.meta.get("response_fields")
+            expected = call.meta.get("expected_fields")
+            if declared is not None and expected:
+                missing = sorted(set(expected) - set(declared))
+                if missing:
+                    graph.flag_node(call.id, RiskFlag(
+                        code="contract_mismatch", severity="high",
+                        category="contract",
+                        message=f"Frontend reads {', '.join(missing)} — not "
+                                "declared by response model "
+                                f"{ep.meta.get('response_model', '?')}",
+                        evidence=f"{call.file}:{call.line} reads "
+                                 f"{', '.join(expected)}; {ep.file}:{ep.line} "
+                                 f"declares {', '.join(declared)}",
+                        suggestion="Add the field to the response model or "
+                                   "stop reading it — it is undefined at "
+                                   "runtime",
+                    ))
         else:
             orphan_calls += 1
             graph.flag_node(call.id, RiskFlag(

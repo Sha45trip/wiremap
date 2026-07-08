@@ -20,6 +20,8 @@ class TestRouteDiscovery:
         endpoint_ids = {n.id for n in backend_graph.nodes_of(NodeType.ENDPOINT)}
         assert endpoint_ids == {
             EP_GET_ITEM, EP_CREATE, EP_DELETE, EP_BRANCHY, EP_HEALTH, EP_PING,
+            "ep:GET /contract/item", "ep:GET /contract/item2",
+            "ep:GET /contract/items", "ep:GET /contract/raw",
         }
 
     def test_apirouter_prefix_applied(self, backend_graph):

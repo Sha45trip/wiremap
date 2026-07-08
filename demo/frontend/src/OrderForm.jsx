@@ -6,6 +6,10 @@ export function OrderForm() {
     const res = await axios.post("/api/orders", data);
     return res.data;
   };
-  const loadOrder = (id) => axios.get(`/api/orders/${id}`).catch(() => null);
+  const loadOrder = (id) =>
+    axios.get(`/api/orders/${id}`)
+      // reads `status`, which OrderOut does not declare -> contract_mismatch
+      .then((r) => ({ id: r.data.id, total: r.data.total, status: r.data.status }))
+      .catch(() => null);
   return <button onClick={() => submit({ id: 1 })}>Order</button>;
 }

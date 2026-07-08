@@ -84,6 +84,7 @@ untested endpoint handlers are flagged.
 | code | category | what it means |
 |---|---|---|
 | `hot_fragile` | operational | top-decile traffic on an endpoint with high/critical static flags |
+| `contract_mismatch` | contract | frontend reads a field the response model doesn't declare |
 | `orphan_call` | contract | frontend calls a route that doesn't exist — will 404 |
 | `unused_endpoint` | contract | no frontend caller — dead code or external consumer |
 | `confirmed_dead` | contract | statically unreferenced AND zero traffic in window |
@@ -148,10 +149,10 @@ case that must fire and a neighbor that must not. Precision beats recall.
 ## Roadmap
 
 Done: test harness, incremental scans, coverage mapping, runtime telemetry
-collector. Next, in order:
+collector, contract checking (Pydantic `response_model` field sets vs the
+fields the frontend actually reads — declared models only, exact field
+names, so it never guesses). Next, in order:
 
-- **Contract checking** — Pydantic `response_model` field sets vs the fields
-  the frontend actually reads from responses; `contract_mismatch` flag.
 - **Viewer scalability** — pan/zoom, risk filter, search, group-by-file.
 - **Team mode** — Docker self-hosted (collector + viewer service),
   `wiremap diff` + GitHub Action PR comments with `--fail-on critical`

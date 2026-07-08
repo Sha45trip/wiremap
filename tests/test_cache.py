@@ -22,8 +22,8 @@ from wiremap.risk import DEFAULT_CONFIG, score
 
 from conftest import BACKEND_FIXTURE, FRONTEND_FIXTURE, DEMO_DIR, normalize
 
-N_BACKEND_FILES = 6   # tests/fixtures/backend_app/app/*.py
-N_FRONTEND_FILES = 2  # tests/fixtures/frontend_app/src/*.jsx
+N_BACKEND_FILES = 8   # tests/fixtures/backend_app/app/*.py
+N_FRONTEND_FILES = 3  # tests/fixtures/frontend_app/src/*.jsx
 
 
 @pytest.fixture
@@ -147,15 +147,15 @@ class TestCliAcceptance:
     def test_second_cli_scan_logs_zero_parses(self, demo_copy, capsys):
         assert cli.main(["scan", str(demo_copy)]) == 0
         first = capsys.readouterr().out
-        assert "files parsed      7" in first
+        assert "files parsed      8" in first
 
         assert cli.main(["scan", str(demo_copy)]) == 0
         second = capsys.readouterr().out
-        assert "files parsed      0  (7 unchanged, from cache)" in second
+        assert "files parsed      0  (8 unchanged, from cache)" in second
 
     def test_no_cache_flag_forces_full_parse(self, demo_copy, capsys):
         cli.main(["scan", str(demo_copy)])
         capsys.readouterr()
         cli.main(["scan", str(demo_copy), "--no-cache"])
         out = capsys.readouterr().out
-        assert "files parsed      7  (cache disabled)" in out
+        assert "files parsed      8  (cache disabled)" in out
