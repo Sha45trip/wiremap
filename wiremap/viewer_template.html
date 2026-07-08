@@ -166,6 +166,15 @@ function show(item, kind) {
         <b style="color:${item.meta.coverage_pct === 0 ? 'var(--bad)' :
                           item.meta.coverage_pct < 50 ? 'var(--warn)' : 'var(--ok)'}">
         ${item.meta.coverage_pct}%</b></div>` : ''}
+    ${item.meta && item.meta.runtime ? (item.meta.runtime.req_count ? `
+      <div class="cov">runtime (${item.meta.runtime.window_hours}h):
+        <b>${item.meta.runtime.req_count}</b> req ·
+        p95 <b>${item.meta.runtime.p95_ms}ms</b> ·
+        <b style="color:${item.meta.runtime.error_rate > 0.02 ? 'var(--bad)' : 'var(--ok)'}">
+        ${(item.meta.runtime.error_rate * 100).toFixed(1)}%</b> 5xx
+        ${item.meta.runtime.confidence === 'probable' ? ' · path-matched' : ''}</div>` : `
+      <div class="cov">runtime (${item.meta.runtime.window_hours}h):
+        <b style="color:var(--warn)">no traffic</b></div>`) : ''}
     ${flags.length ? flags.map(f => `
       <div class="flag ${f.severity}">
         <div class="code">${esc(f.severity)} · ${esc(f.category)} · ${esc(f.code)}</div>

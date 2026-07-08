@@ -26,6 +26,7 @@ DEFAULT_CONFIG = {
     "weights": {"quality": 1.0, "contract": 1.5, "operational": 1.0, "security": 2.0},
     "severity": {"low": 1, "medium": 3, "high": 6, "critical": 10},
     "hub_fanin_threshold": 3,
+    "runtime": {"p95_ms_threshold": 1000, "error_rate_threshold": 0.02},
 }
 
 
@@ -35,7 +36,7 @@ def load_config(project_root: str) -> dict:
     if os.path.exists(path):
         with open(path) as f:
             user = yaml.safe_load(f) or {}
-        for k in ("weights", "severity"):
+        for k in ("weights", "severity", "runtime"):
             if k in user:
                 cfg[k] = {**cfg[k], **user[k]}
         if "hub_fanin_threshold" in user:

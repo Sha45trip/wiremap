@@ -2,6 +2,7 @@
 
     wiremap scan <project_root> [--backend DIR] [--frontend DIR]
                  [--out DIR] [--no-cache] [--coverage FILE] [--serve]
+    wiremap collect [project_root] [--port 4318] [--window 24]
 """
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ import sys
 import webbrowser
 
 from .cache import FileCache
+from .collector import merge_runtime, run_collector
 from .coverage import apply_coverage, load_coverage
 from .graph import Graph
 from .extractors.python_backend import extract_backend
@@ -70,6 +72,7 @@ def scan(args) -> int:
         cov_stats = apply_coverage(graph, cov)
 
     config = load_config(root)
+    rt_stats = merge_runtime(graph, os.path.join(out_dir, "runtime.json"), config)
     r_stats = score(graph, config)
 
     if cache is not None:
@@ -99,7 +102,8 @@ def scan(args) -> int:
   wires matched     {m_stats['matched']}
   orphan calls      {m_stats['orphan_calls']}   <- frontend calls with no backend route
   unused endpoints  {m_stats['unused_endpoints']}{f'''
-  coverage mapped   {cov_stats['nodes_with_coverage']} nodes  ({cov_stats['untested_handlers']} under-tested handlers)''' if cov_stats else ''}
+  coverage mapped   {cov_stats['nodes_with_coverage']} nodes  ({cov_stats['untested_handlers']} under-tested handlers)''' if cov_stats else ''}{f'''
+  runtime overlay   {rt_stats['endpoints_with_traffic']} endpoints with traffic  ({rt_stats['runtime_flags']} runtime flags)''' if rt_stats else ''}
   risk flags        {r_stats['total_flags']}  ({r_stats['critical_flags']} critical)
 
   graph  -> {graph_path}
@@ -135,6 +139,16 @@ def main(argv=None) -> int:
     ps.add_argument("--serve", action="store_true", help="serve the viewer locally")
     ps.add_argument("--port", type=int, default=8787)
     ps.set_defaults(func=scan)
+
+    pc = sub.add_parser("collect",
+                        help="run the OTLP/JSON trace receiver "
+                             "(writes .wiremap/runtime.json)")
+    pc.add_argument("project_root", nargs="?", default=".")
+    pc.add_argument("--port", type=int, default=4318)
+    pc.add_argument("--window", type=float, default=24.0,
+                    help="rolling window in hours (default 24)")
+    pc.set_defaults(func=lambda a: run_collector(a.project_root, a.port, a.window))
+
     args = p.parse_args(argv)
     return args.func(args)
 
