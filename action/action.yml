@@ -1,0 +1,84 @@
+name: 'wiremap'
+description: >-
+  Scan the repo with wiremap, diff wires and risk flags against the PR's
+  base branch, post the result as a PR comment, and optionally fail the
+  job when new flags at or above a severity appear.
+branding:
+  icon: 'git-merge'
+  color: 'purple'
+
+inputs:
+  fail-on:
+    description: 'Fail when an introduced flag is at or above this severity (low|medium|high|critical). Empty string disables the gate.'
+    required: false
+    default: 'critical'
+  backend:
+    description: 'Backend source dir, relative to the repo root (default: auto-detect)'
+    required: false
+    default: ''
+  frontend:
+    description: 'Frontend source dir, relative to the repo root (default: auto-detect)'
+    required: false
+    default: ''
+  comment:
+    description: 'Post the diff as a PR comment (requires a token with PR write access)'
+    required: false
+    default: 'true'
+  github-token:
+    description: 'Token used for the PR comment'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install wiremap
+      shell: bash
+      run: pip install --quiet "${{ github.action_path }}/.."
+
+    - name: Scan head
+      shell: bash
+      run: |
+        ARGS=()
+        [ -n "${{ inputs.backend }}" ] && ARGS+=(--backend "${{ inputs.backend }}")
+        [ -n "${{ inputs.frontend }}" ] && ARGS+=(--frontend "${{ inputs.frontend }}")
+        wiremap scan . --no-cache --out "$RUNNER_TEMP/wiremap-head" "${ARGS[@]}"
+
+    - name: Scan base branch
+      shell: bash
+      run: |
+        BASE="${GITHUB_BASE_REF:-main}"
+        git fetch --no-tags --depth=1 origin "$BASE"
+        git worktree add --detach "$RUNNER_TEMP/wiremap-base-src" "origin/$BASE"
+        ARGS=()
+        [ -n "${{ inputs.backend }}" ] && ARGS+=(--backend "$RUNNER_TEMP/wiremap-base-src/${{ inputs.backend }}")
+        [ -n "${{ inputs.frontend }}" ] && ARGS+=(--frontend "$RUNNER_TEMP/wiremap-base-src/${{ inputs.frontend }}")
+        wiremap scan "$RUNNER_TEMP/wiremap-base-src" --no-cache \
+          --out "$RUNNER_TEMP/wiremap-base" "${ARGS[@]}"
+
+    - name: Diff
+      shell: bash
+      run: |
+        wiremap diff "$RUNNER_TEMP/wiremap-base/graph.json" \
+                     "$RUNNER_TEMP/wiremap-head/graph.json" \
+                     --format md > "$RUNNER_TEMP/wiremap-comment.md"
+        cat "$RUNNER_TEMP/wiremap-comment.md" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Comment on PR
+      if: inputs.comment == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        gh pr comment "${{ github.event.pull_request.number }}" \
+          --repo "$GITHUB_REPOSITORY" \
+          --body-file "$RUNNER_TEMP/wiremap-comment.md" \
+          || echo "::warning::could not post PR comment (fork PR or missing permission)"
+
+    - name: Gate on introduced flags
+      if: inputs.fail-on != ''
+      shell: bash
+      run: |
+        wiremap diff "$RUNNER_TEMP/wiremap-base/graph.json" \
+                     "$RUNNER_TEMP/wiremap-head/graph.json" \
+                     --fail-on "${{ inputs.fail-on }}" > /dev/null

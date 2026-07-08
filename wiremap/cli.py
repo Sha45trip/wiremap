@@ -4,6 +4,7 @@
                  [--out DIR] [--no-cache] [--coverage FILE] [--serve]
     wiremap collect [project_root] [--port 4318] [--window 24]
     wiremap serve [project_root] [--port 8787] [--rescan-interval SECS]
+    wiremap diff <old.json> <new.json> [--format text|md|json] [--fail-on SEV]
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ import webbrowser
 from .cache import FileCache
 from .collector import merge_runtime, run_collector
 from .coverage import apply_coverage, load_coverage
+from .diff import SEVERITY_ORDER, run_diff
 from .graph import Graph
 from .extractors.python_backend import extract_backend
 from .extractors.react_frontend import extract_frontend
@@ -187,6 +189,21 @@ def main(argv=None) -> int:
     pv.set_defaults(func=lambda a: run_server(
         a.project_root, a.port, out=a.out, backend=a.backend,
         frontend=a.frontend, rescan_interval=a.rescan_interval))
+
+    pdf = sub.add_parser("diff",
+                         help="compare two graph.json files: wires "
+                              "added/removed/changed, flags "
+                              "introduced/resolved, risk delta")
+    pdf.add_argument("old_graph")
+    pdf.add_argument("new_graph")
+    pdf.add_argument("--format", choices=("text", "md", "json"),
+                     default="text",
+                     help="md emits a PR-comment body")
+    pdf.add_argument("--fail-on", choices=tuple(SEVERITY_ORDER),
+                     help="exit 1 when an introduced flag is at or above "
+                          "this severity (merge gate)")
+    pdf.set_defaults(func=lambda a: run_diff(a.old_graph, a.new_graph,
+                                             a.format, a.fail_on))
 
     args = p.parse_args(argv)
     return args.func(args)

@@ -73,6 +73,26 @@ WIREMAP_REPO=/path/to/your/project docker compose up -d
 
 Or without Docker: `wiremap serve . --rescan-interval 900`.
 
+## CI merge gate (GitHub Action)
+
+```yaml
+- uses: <owner>/wiremap/action@main
+  with:
+    fail-on: critical
+```
+
+Scans the PR head and base branch, comments the diff on the PR (wires
+added/removed/changed, flags introduced/resolved by `(node_id, code)`,
+total risk delta), and fails the job when introduced flags reach the
+`fail-on` severity. The action is a thin wrapper around `wiremap diff`:
+
+```bash
+wiremap diff base/graph.json head/graph.json --format md   # PR comment body
+wiremap diff base/graph.json head/graph.json --fail-on critical  # exit 1 on new criticals
+```
+
+See [action/README.md](action/README.md) for the full workflow.
+
 Security model (v1): intended for **trusted networks** — the viewer and
 graph are served without auth. Set `WIREMAP_TOKEN` to require
 `Authorization: Bearer <token>` on the mutating routes (`/v1/traces`,
@@ -149,7 +169,8 @@ coverage.py                    coverage.py JSON -> coverage_pct + untested_handl
 collector.py                   OTLP/JSON receiver, rolling-window store, runtime flags
 graph.py                       unified node/edge model, JSON serialization
 server.py                      team-mode daemon: viewer + OTLP + webhook/interval re-scans
-cli.py                         scan/collect/serve commands, viewer generation
+diff.py                        graph diffing, PR-comment formatting, --fail-on gate
+cli.py                         scan/collect/serve/diff commands, viewer generation
 viewer_template.html           zero-dependency interactive wire map
 ```
 
@@ -176,10 +197,9 @@ fields the frontend actually reads — declared models only, exact field
 names, so it never guesses), viewer scalability (wheel-zoom/drag-pan,
 risk-threshold slider, search, collapse-by-file above 60 nodes per column —
 still a single self-contained HTML file), Docker self-hosted team mode
-(`wiremap serve` + Dockerfile/compose, WIREMAP_TOKEN). Next:
+(`wiremap serve` + Dockerfile/compose, WIREMAP_TOKEN), CI integration
+(`wiremap diff` + GitHub Action with `--fail-on` merge gating). Next:
 
-- **CI integration** — `wiremap diff` + GitHub Action PR comments with
-  `--fail-on critical` merge gating.
 - **Framework adapters** — Django, Flask blueprints, React Query,
   generated OpenAPI clients.
 - **Module-qualified call graph** — removes cross-module name collisions.
