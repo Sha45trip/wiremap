@@ -23,6 +23,7 @@ from .graph import Graph
 from .extractors.python_backend import extract_backend
 from .extractors.react_frontend import extract_frontend
 from .matcher import match
+from .openapi import ingest_endpoints, load_openapi, operation_map
 from .risk import load_config, score
 from .server import run_server
 
@@ -66,7 +67,15 @@ def perform_scan(project_root: str, backend: str | None = None,
 
     graph = Graph()
     b_stats = extract_backend(b_dir, graph, cache)
-    f_stats = extract_frontend(f_dir, graph, cache)
+
+    oa_stats = client_ops = None
+    found = load_openapi(root, b_dir)
+    if found:
+        spec, spec_rel = found
+        oa_stats = ingest_endpoints(spec, graph, spec_rel)
+        client_ops = operation_map(spec)
+
+    f_stats = extract_frontend(f_dir, graph, cache, client_ops=client_ops)
     m_stats = match(graph)
 
     cov_stats = None
@@ -94,7 +103,7 @@ def perform_scan(project_root: str, backend: str | None = None,
 
     return {"backend": b_dir, "frontend": f_dir, "out_dir": out_dir,
             "graph_path": graph_path, "viewer_path": viewer_path,
-            "b": b_stats, "f": f_stats, "m": m_stats,
+            "b": b_stats, "f": f_stats, "m": m_stats, "oa": oa_stats,
             "cov": cov_stats, "rt": rt_stats, "r": r_stats}
 
 
@@ -121,7 +130,8 @@ def scan(args) -> int:
   frontend: {res['frontend']}
 
   files parsed      {parsed}  ({cache_note})
-  routes found      {b_stats['routes']}
+  routes found      {b_stats['routes']}{f'''
+  openapi ingested  {res['oa']['endpoints']} spec endpoints''' if res['oa'] else ''}
   api call sites    {f_stats['api_calls']}
   wires matched     {m_stats['matched']}
   orphan calls      {m_stats['orphan_calls']}   <- frontend calls with no backend route

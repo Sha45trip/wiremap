@@ -114,9 +114,16 @@ untested endpoint handlers are flagged.
 ## What it detects
 
 **Wiring**
-- FastAPI routes (`@app.get`, `APIRouter` with prefixes) and basic Flask routes
+- FastAPI routes (`@app.get`, `APIRouter` with prefixes), Flask routes and
+  blueprints (`url_prefix`, multi-method), Django (`urls.py`
+  `path()`/`re_path()`/`include()`, class-based views, DRF routers)
+- OpenAPI: an `openapi.json` in the repo is ingested as the endpoint source
+  of truth; generated-client calls (`api.getPetById(...)`) match by
+  operationId
 - React call sites: `fetch()`, `axios.get/post/put/delete/patch`, generic
-  `api.*`/`client.*` wrappers, with template-literal URL resolution
+  `api.*`/`client.*` wrappers, with template-literal URL resolution;
+  calls inside React Query hooks (`useQuery`/`useMutation`) are recognized
+  and not flagged for missing error handling — the hook owns it
 - Cross-stack matching: `` `/api/users/${id}` `` ↔ `/api/users/{user_id}`
 - Backend call graph: handler → services → ORM models (SQLAlchemy),
   module-qualified via import tracking (`from .services import x` resolves
@@ -202,10 +209,11 @@ still a single self-contained HTML file), Docker self-hosted team mode
 (`wiremap serve` + Dockerfile/compose, WIREMAP_TOKEN), CI integration
 (`wiremap diff` + GitHub Action with `--fail-on` merge gating), and a
 module-qualified call graph (import-tracked resolution — no cross-module
-name collisions). Next:
+name collisions), and framework adapters (Django incl. CBVs + DRF routers,
+Flask blueprints, React Query, OpenAPI clients).
 
-- **Framework adapters** — Django, Flask blueprints, React Query,
-  generated OpenAPI clients.
+**The roadmap through v0.x is complete.** Candidates beyond it: Express/
+Node backends, tRPC, protobuf OTLP, auth for team mode.
 
 ## Extending
 

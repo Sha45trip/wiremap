@@ -1,0 +1,16 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "pets", "version": "1.0.0"},
+  "paths": {
+    "/pets": {
+      "get": {"operationId": "listPets"},
+      "post": {"operationId": "createPet", "security": [{"bearer": []}]}
+    },
+    "/pets/{petId}": {
+      "get": {"operationId": "getPetById"}
+    },
+    "/internal/audit": {
+      "get": {"operationId": "auditLog"}
+    }
+  }
+}

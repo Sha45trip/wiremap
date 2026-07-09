@@ -15,12 +15,20 @@ from __future__ import annotations
 
 import ast
 import os
+import re
 from dataclasses import dataclass, field, asdict
 
 from ..cache import FileCache, content_hash
 from ..graph import Graph, Node, Edge, NodeType, EdgeType, Confidence, RiskFlag
 
 HTTP_METHODS = {"get", "post", "put", "delete", "patch", "head", "options"}
+_DJANGO_METHOD_DECS = {"require_GET": ["GET"], "require_POST": ["POST"],
+                       "require_safe": ["GET"]}
+# DRF DefaultRouter action -> (HTTP method, path suffix)
+_DRF_ACTIONS = (("list", "GET", ""), ("create", "POST", ""),
+                ("retrieve", "GET", "<pk>/"), ("update", "PUT", "<pk>/"),
+                ("partial_update", "PATCH", "<pk>/"),
+                ("destroy", "DELETE", "<pk>/"))
 IO_CALL_HINTS = (
     "execute", "commit", "query", "get", "post", "put", "delete",
     "request", "fetch", "read", "write", "send",
@@ -54,6 +62,8 @@ class FunctionInfo:
     raw_sql_interp: list = field(default_factory=list)   # (line, snippet)
     complexity: int = 1
     orm_models: list = field(default_factory=list)
+    methods: list = field(default_factory=list)    # from @require_GET etc.
+    auth_hint: bool = False                        # decorator/class auth smell
 
 
 def _module_of(rel: str) -> tuple[str, bool]:
@@ -81,6 +91,41 @@ def _resolve_relative(module: str, is_init: bool, level: int,
     return ".".join(base) or None
 
 
+def _dotted_name(expr) -> str | None:
+    """`views.OrderList` -> "views.OrderList"; anything non-Name-chain -> None."""
+    if isinstance(expr, ast.Name):
+        return expr.id
+    if isinstance(expr, ast.Attribute):
+        base = _dotted_name(expr.value)
+        return f"{base}.{expr.attr}" if base else None
+    return None
+
+
+def _regex_to_template(pattern: str) -> str:
+    """Django re_path regex -> path-ish template the canonicalizer groks."""
+    p = pattern.lstrip("^").rstrip("$")
+    p = re.sub(r"\(\?P<(\w+)>[^)]*\)", r"<\1>", p)     # named group -> <name>
+    p = re.sub(r"\([^)]*\)", "<p>", p)                 # anonymous group
+    return p.replace("\\/", "/").replace("\\.", ".")
+
+
+def _methods_from_decorators(decorator_list) -> list[str]:
+    """@require_GET / @require_http_methods([...]) / DRF @api_view([...])."""
+    methods: list[str] = []
+    for dec in decorator_list:
+        target = dec.func if isinstance(dec, ast.Call) else dec
+        name = target.attr if isinstance(target, ast.Attribute) \
+            else getattr(target, "id", "")
+        if name in _DJANGO_METHOD_DECS:
+            methods += _DJANGO_METHOD_DECS[name]
+        elif name in ("require_http_methods", "api_view") \
+                and isinstance(dec, ast.Call) and dec.args \
+                and isinstance(dec.args[0], (ast.List, ast.Tuple)):
+            methods += [str(e.value).upper() for e in dec.args[0].elts
+                        if isinstance(e, ast.Constant)]
+    return methods
+
+
 class _ModuleVisitor(ast.NodeVisitor):
     """Collects routes, functions, imports, prefixes, and models in one file."""
 
@@ -94,7 +139,10 @@ class _ModuleVisitor(ast.NodeVisitor):
         self.router_prefixes: dict[str, str] = {}   # var name -> prefix
         self.orm_models: list[tuple[str, int]] = []
         self.pydantic_models: dict[str, dict] = {}  # name -> {fields, bases}
+        self.url_entries: list[dict] = []           # django urlpatterns items
+        self.drf_registrations: list[dict] = []     # router.register(...) calls
         self._class_stack: list[str] = []
+        self._class_auth: list[bool] = []
 
     def visit_Import(self, node: ast.Import):
         for alias in node.names:
@@ -116,19 +164,79 @@ class _ModuleVisitor(ast.NodeVisitor):
                 self.imports[alias.asname or alias.name] = f"{base}.{alias.name}"
         self.generic_visit(node)
 
-    # --- router prefix detection: APIRouter(prefix="/api/users") ---
+    # --- prefix detection: APIRouter(prefix=...) / Blueprint(url_prefix=...) ---
     def visit_Assign(self, node: ast.Assign):
         if isinstance(node.value, ast.Call):
             fn = node.value.func
             name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
-            if name == "APIRouter":
+            if name in ("APIRouter", "Blueprint"):
                 prefix = ""
                 for kw in node.value.keywords:
-                    if kw.arg == "prefix" and isinstance(kw.value, ast.Constant):
+                    if kw.arg in ("prefix", "url_prefix") \
+                            and isinstance(kw.value, ast.Constant):
                         prefix = kw.value.value
                 for tgt in node.targets:
                     if isinstance(tgt, ast.Name):
                         self.router_prefixes[tgt.id] = prefix
+        for tgt in node.targets:
+            if isinstance(tgt, ast.Name) and tgt.id == "urlpatterns":
+                self._collect_url_entries(node.value)
+        self.generic_visit(node)
+
+    def visit_AugAssign(self, node: ast.AugAssign):
+        if isinstance(node.target, ast.Name) and node.target.id == "urlpatterns":
+            self._collect_url_entries(node.value)
+        self.generic_visit(node)
+
+    def _collect_url_entries(self, value):
+        """Django: path()/re_path()/url() items in a urlpatterns list."""
+        if isinstance(value, ast.BinOp):            # urlpatterns = [...] + [...]
+            self._collect_url_entries(value.left)
+            self._collect_url_entries(value.right)
+            return
+        if not isinstance(value, (ast.List, ast.Tuple)):
+            return
+        for el in value.elts:
+            if not isinstance(el, ast.Call):
+                continue
+            f = el.func
+            fname = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", "")
+            if fname not in ("path", "re_path", "url"):
+                continue
+            if len(el.args) < 2 or not isinstance(el.args[0], ast.Constant):
+                continue
+            pattern = str(el.args[0].value)
+            if fname in ("re_path", "url"):
+                pattern = _regex_to_template(pattern)
+            view = el.args[1]
+            entry = {"pattern": pattern, "line": el.lineno,
+                     "view": None, "cbv": False, "include": None}
+            if isinstance(view, ast.Call):
+                vf = view.func
+                vfname = vf.attr if isinstance(vf, ast.Attribute) \
+                    else getattr(vf, "id", "")
+                if vfname == "include" and view.args \
+                        and isinstance(view.args[0], ast.Constant):
+                    entry["include"] = str(view.args[0].value)
+                elif vfname == "as_view":
+                    entry["view"] = _dotted_name(vf.value)
+                    entry["cbv"] = True
+            else:
+                entry["view"] = _dotted_name(view)
+            if entry["view"] or entry["include"]:
+                self.url_entries.append(entry)
+
+    # --- DRF: router.register("items", ItemViewSet) ---
+    def visit_Expr(self, node: ast.Expr):
+        call = node.value
+        if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) \
+                and call.func.attr == "register" and len(call.args) >= 2 \
+                and isinstance(call.args[0], ast.Constant):
+            viewset = _dotted_name(call.args[1])
+            if viewset:
+                self.drf_registrations.append(
+                    {"prefix": str(call.args[0].value).strip("/"),
+                     "viewset": viewset, "line": node.lineno})
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef):
@@ -141,9 +249,13 @@ class _ModuleVisitor(ast.NodeVisitor):
             fields = [s.target.id for s in node.body
                       if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)]
             self.pydantic_models[node.name] = {"fields": fields, "bases": bases}
+        cls_text = " ".join(bases + [ast.unparse(d) for d in
+                                     node.decorator_list]).lower()
+        self._class_auth.append(any(h in cls_text for h in AUTH_HINTS))
         self._class_stack.append(node.name)
         self.generic_visit(node)
         self._class_stack.pop()
+        self._class_auth.pop()
 
     def visit_FunctionDef(self, node):
         self._handle_function(node)
@@ -166,18 +278,20 @@ class _ModuleVisitor(ast.NodeVisitor):
         info.raw_sql_interp = analyzer.raw_sql
         info.complexity = analyzer.complexity
         info.orm_models = analyzer.orm_models
+        info.methods = _methods_from_decorators(node.decorator_list)
+        dec_text = " ".join(ast.unparse(d) for d in node.decorator_list).lower()
+        info.auth_hint = (any(h in dec_text for h in AUTH_HINTS)
+                          or any(self._class_auth))
         self.functions[f"{self.module}.{qname}" if self.module else qname] = info
 
         # route decorators
         for dec in node.decorator_list:
-            route = self._route_from_decorator(dec, qname, node)
-            if route:
-                self.routes.append(route)
+            self.routes.extend(self._route_from_decorator(dec, qname, node))
         self.generic_visit(node)
 
-    def _route_from_decorator(self, dec, qname, fn_node) -> RouteInfo | None:
+    def _route_from_decorator(self, dec, qname, fn_node) -> list[RouteInfo]:
         if not isinstance(dec, ast.Call):
-            return None
+            return []
         f = dec.func
         # FastAPI: @app.get("/x") / @router.post("/y")
         if isinstance(f, ast.Attribute) and f.attr in HTTP_METHODS:
@@ -194,15 +308,16 @@ class _ModuleVisitor(ast.NodeVisitor):
                     response_model = kw.value.id
             if not response_model and isinstance(fn_node.returns, ast.Name):
                 response_model = fn_node.returns.id
-            return RouteInfo(
+            return [RouteInfo(
                 method=f.attr.upper(), path=path,
                 handler=f"{self.module}.{qname}" if self.module else qname,
                 file=self.rel, line=fn_node.lineno, framework="fastapi",
                 has_auth_dep=self._has_auth_dependency(fn_node),
                 router_prefix=prefix, response_model=response_model,
-            )
-        # Flask: @app.route("/x", methods=["POST"])
+            )]
+        # Flask: @app.route(...) / @bp.route(...), one RouteInfo per method
         if isinstance(f, ast.Attribute) and f.attr == "route":
+            owner = getattr(f.value, "id", "")
             path = ""
             if dec.args and isinstance(dec.args[0], ast.Constant):
                 path = str(dec.args[0].value)
@@ -210,13 +325,14 @@ class _ModuleVisitor(ast.NodeVisitor):
             for kw in dec.keywords:
                 if kw.arg == "methods" and isinstance(kw.value, (ast.List, ast.Tuple)):
                     methods = [e.value for e in kw.value.elts if isinstance(e, ast.Constant)]
-            return RouteInfo(
-                method=methods[0].upper(), path=path,
+            return [RouteInfo(
+                method=str(m).upper(), path=path,
                 handler=f"{self.module}.{qname}" if self.module else qname,
                 file=self.rel, line=fn_node.lineno, framework="flask",
                 has_auth_dep=self._has_auth_dependency(fn_node),
-            )
-        return None
+                router_prefix=self.router_prefixes.get(owner, ""),
+            ) for m in methods]
+        return []
 
     @staticmethod
     def _has_auth_dependency(fn_node) -> bool:
@@ -320,7 +436,78 @@ def _parse_source(source: str, rel: str) -> dict:
         "pydantic_models": v.pydantic_models,
         "module": v.module,
         "imports": v.imports,
+        "url_entries": v.url_entries,
+        "drf": v.drf_registrations,
     }
+
+
+def _django_routes(url_map: dict[str, list], drf_map: dict[str, list],
+                   all_imports: dict[str, dict],
+                   functions: dict[str, FunctionInfo]) -> list[RouteInfo]:
+    """Resolve Django urlpatterns + DRF registrations into RouteInfos.
+
+    urls modules that no other module include()s are treated as roots;
+    include() nests prefixes. View refs resolve through the urls module's
+    import map (same machinery as the call graph). Unresolvable views are
+    skipped, never guessed.
+    """
+    included = {e["include"] for entries in url_map.values()
+                for e in entries if e["include"]}
+    routes: list[RouteInfo] = []
+    emitted: set = set()
+
+    def resolve(dotted: str, module: str) -> str:
+        parts = dotted.split(".")
+        base = all_imports.get(module, {}).get(parts[0])
+        if base:
+            return ".".join([base] + parts[1:])
+        return f"{module}.{dotted}" if module else dotted
+
+    def emit(method: str, full: str, handler_fqn: str):
+        info = functions.get(handler_fqn)
+        if info is None:
+            return
+        key = (method, full, handler_fqn)
+        if key in emitted:
+            return
+        emitted.add(key)
+        routes.append(RouteInfo(
+            method=method, path="/" + full.lstrip("/"), handler=handler_fqn,
+            file=info.file, line=info.line, framework="django",
+            has_auth_dep=info.auth_hint))
+
+    def walk(module: str, prefix: str, stack: frozenset):
+        if module in stack:
+            return
+        stack = stack | {module}
+        for e in url_map.get(module, []):
+            full = prefix + e["pattern"]
+            if e["include"]:
+                walk(e["include"], full, stack)
+                continue
+            fqn = resolve(e["view"], module)
+            if e["cbv"]:
+                for m in sorted(HTTP_METHODS):
+                    if f"{fqn}.{m}" in functions:
+                        emit(m.upper(), full, f"{fqn}.{m}")
+            else:
+                info = functions.get(fqn)
+                if info:
+                    for m in (info.methods or ["GET"]):
+                        emit(m, full, fqn)
+        for reg in drf_map.get(module, []):
+            fqn = resolve(reg["viewset"], module)
+            for action, m, suffix in _DRF_ACTIONS:
+                if f"{fqn}.{action}" in functions:
+                    emit(m, f"{prefix}{reg['prefix']}/{suffix}",
+                         f"{fqn}.{action}")
+
+    roots = [m for m in url_map if m not in included]
+    roots += [m for m in drf_map
+              if m not in url_map and m not in included]
+    for module in sorted(set(roots)):
+        walk(module, "", frozenset())
+    return routes
 
 
 def _resolve_callee(callee: str, info: FunctionInfo, imports: dict[str, str],
@@ -367,6 +554,8 @@ def extract_backend(root: str, graph: Graph,
     all_models: list[tuple[str, str, int]] = []
     all_pydantic: dict[str, dict] = {}
     all_imports: dict[str, dict] = {}       # module -> {local name: fqn}
+    all_url_entries: dict[str, list] = {}   # module -> django urlpatterns
+    all_drf: dict[str, list] = {}           # module -> DRF registrations
     files_parsed = files_cached = 0
     seen_files: set[str] = set()
 
@@ -396,9 +585,16 @@ def extract_backend(root: str, graph: Graph,
             all_models.extend((m, rel, ln) for m, ln in data["models"])
             all_pydantic.update(data.get("pydantic_models", {}))
             all_imports[data["module"]] = data["imports"]
+            if data.get("url_entries"):
+                all_url_entries[data["module"]] = data["url_entries"]
+            if data.get("drf"):
+                all_drf[data["module"]] = data["drf"]
 
     if cache:
         cache.prune("backend", seen_files)
+
+    all_routes.extend(_django_routes(all_url_entries, all_drf,
+                                     all_imports, all_functions))
 
     # --- nodes: ORM models ---
     for mname, mfile, mline in all_models:

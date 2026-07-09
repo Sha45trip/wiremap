@@ -322,6 +322,24 @@ def _expected_fields(call_node, src: bytes, is_axios: bool) -> list[str]:
     return sorted(fields)
 
 
+_REACT_QUERY_HOOKS = ("useQuery", "useMutation", "useInfiniteQuery",
+                      "useSuspenseQuery")
+
+
+def _in_react_query(call_node, src: bytes) -> bool:
+    """True when the call sits inside a React Query hook's options —
+    the hook owns error handling, so no_error_handling must not fire."""
+    cur = call_node.parent
+    while cur is not None:
+        if cur.type == "call_expression":
+            fn = cur.child_by_field_name("function")
+            if fn is not None and fn.type == "identifier" \
+                    and _text(fn, src) in _REACT_QUERY_HOOKS:
+                return True
+        cur = cur.parent
+    return False
+
+
 def _call_features(call_node, src: bytes) -> dict:
     """Detect .catch / try context / AbortController-timeout near the call."""
     # walk up through the full fluent chain: fetch(x).then(...).catch(...)
@@ -344,7 +362,8 @@ def _call_features(call_node, src: bytes) -> dict:
 
 
 def extract_frontend(root: str, graph: Graph,
-                     cache: FileCache | None = None) -> dict:
+                     cache: FileCache | None = None,
+                     client_ops: dict | None = None) -> dict:
     n_calls = 0
     seen_components: set[str] = set()
     files_parsed = files_cached = 0
@@ -371,7 +390,8 @@ def extract_frontend(root: str, graph: Graph,
                     cache.put("frontend", rel, sha, records)
             else:
                 files_cached += 1
-            n_calls += _assemble(records, rel, graph, seen_components)
+            n_calls += _assemble(records, rel, graph, seen_components,
+                                 client_ops)
 
     if cache:
         cache.prune("frontend", seen_files)
@@ -415,6 +435,22 @@ def _parse_source(src: bytes, rel: str, lang) -> list[dict]:
                     url_node = args.named_children[0]
                     method = prop_t.upper()
                     is_axios = True
+            # generated OpenAPI client: api.getPetById(...) — record the
+            # method name; assembly maps it to an operationId if a spec
+            # was ingested, otherwise the record is dropped silently
+            elif (re.match(r"^(api\w*|client|http)$", obj_t, re.I)
+                  and prop_t not in _JS_BUILTINS and args is not None):
+                comp_name, comp_line = _enclosing_component(node, src)
+                features = _call_features(node, src)
+                records.append({
+                    "op": prop_t, "component": comp_name,
+                    "component_line": comp_line,
+                    "line": node.start_point[0] + 1,
+                    "has_error_handling": (features["has_error_handling"]
+                                           or _in_react_query(node, src)),
+                    "has_timeout": features["has_timeout"],
+                })
+                continue
             # axios({url, method})
             elif obj_t == "axios" and prop_t == "request":
                 pass  # rare; skip in v1
@@ -430,22 +466,35 @@ def _parse_source(src: bytes, rel: str, lang) -> list[dict]:
 
         comp_name, comp_line = _enclosing_component(node, src)
         features = _call_features(node, src)
+        rq = _in_react_query(node, src)
         records.append({
             "method": method, "url": url, "confidence": confidence.value,
             "component": comp_name, "component_line": comp_line,
             "line": node.start_point[0] + 1,
-            "has_error_handling": features["has_error_handling"],
+            "has_error_handling": features["has_error_handling"] or rq,
             "has_timeout": features["has_timeout"],
+            "react_query": rq,
             "expected_fields": _expected_fields(node, src, is_axios),
         })
     return records
 
 
 def _assemble(records: list[dict], rel: str, graph: Graph,
-              seen_components: set[str]) -> int:
+              seen_components: set[str],
+              client_ops: dict | None = None) -> int:
     """Turn one file's call records into graph nodes, edges, and flags."""
+    count = 0
     for rec in records:
-        method, url, line = rec["method"], rec["url"], rec["line"]
+        if "op" in rec:
+            hit = (client_ops or {}).get(rec["op"])
+            if not hit:
+                continue
+            method, url, confidence = hit["method"], hit["path"], "probable"
+        else:
+            method, url = rec["method"], rec["url"]
+            confidence = rec["confidence"]
+        line = rec["line"]
+        count += 1
         seen_components.add(rec["component"])
 
         comp_id = f"cmp:{rec['component']}"
@@ -456,9 +505,13 @@ def _assemble(records: list[dict], rel: str, graph: Graph,
 
         call_id = f"call:{rel}:{line}"
         meta = {"method": method, "url": url,
-                "confidence": rec["confidence"],
+                "confidence": confidence,
                 "has_error_handling": rec["has_error_handling"],
                 "has_timeout": rec["has_timeout"]}
+        if "op" in rec:
+            meta["operation_id"] = rec["op"]
+        if rec.get("react_query"):
+            meta["react_query"] = True
         if rec.get("expected_fields"):
             meta["expected_fields"] = rec["expected_fields"]
             meta["fields_confidence"] = "inferred"
@@ -485,4 +538,4 @@ def _assemble(records: list[dict], rel: str, graph: Graph,
                 evidence=f"{rel}:{line} `{method} {url}`",
                 suggestion="Pass an AbortController signal or axios timeout",
             ))
-    return len(records)
+    return count
