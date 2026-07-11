@@ -30,3 +30,7 @@ def get_order(order_id: int, user=Depends(get_current_user)):
 def report_summary(user=Depends(get_current_user)):
     # never called by the frontend -> unused_endpoint flag
     return calc_totals(fetch_orders(None))
+
+@app.post("/api/danger")
+def danger(payload: dict):
+    return db.execute(f"DELETE FROM x WHERE id = {payload['id']}")
