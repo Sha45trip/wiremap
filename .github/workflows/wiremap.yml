@@ -1,0 +1,24 @@
+# Dogfood: run the wiremap action on wiremap itself (ROADMAP-v2 4.2).
+# Triggers on PRs (full flow incl. comment) and on test/** pushes so the
+# scan -> base-diff -> gate path can be exercised without a PR.
+name: wiremap
+on:
+  pull_request:
+  push:
+    branches: ['test/**']
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  wiremap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: ./action
+        with:
+          fail-on: critical
