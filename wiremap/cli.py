@@ -53,6 +53,9 @@ def perform_scan(project_root: str, backend: str | None = None,
     `scan()` prints the summary. Raises on unreadable coverage reports.
     """
     root = os.path.abspath(project_root)
+    if not os.path.isdir(root):
+        # a silent empty graph here poisons CI diffs downstream
+        raise FileNotFoundError(f"project root does not exist: {root}")
     b_dir = os.path.abspath(backend) if backend else None
     f_dir = os.path.abspath(frontend) if frontend else None
     if b_dir is None or f_dir is None:

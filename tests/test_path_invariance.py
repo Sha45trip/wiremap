@@ -30,3 +30,12 @@ def test_fixture_scan_ids_are_portable(backend_graph, frontend_graph):
         for node in g.nodes.values():
             assert "\\" not in node.id
             assert "\\" not in node.file
+
+
+def test_missing_project_root_raises_not_empty_graph(tmp_path):
+    # 4.2 dogfood find: a nonexistent root must fail loudly — a silent
+    # empty graph makes a CI diff report everything as introduced
+    import pytest
+    from wiremap.cli import perform_scan
+    with pytest.raises(FileNotFoundError):
+        perform_scan(str(tmp_path / "does-not-exist"))
