@@ -20,6 +20,7 @@ from .collector import merge_runtime, run_collector
 from .coverage import apply_coverage, load_coverage
 from .diff import SEVERITY_ORDER, run_diff
 from .graph import Graph
+from .extractors.express_backend import extract_express
 from .extractors.python_backend import extract_backend
 from .extractors.react_frontend import extract_frontend
 from .matcher import match
@@ -70,6 +71,10 @@ def perform_scan(project_root: str, backend: str | None = None,
 
     graph = Graph()
     b_stats = extract_backend(b_dir, graph, cache)
+    e_stats = extract_express(b_dir, graph, cache)
+    b_stats["routes"] += e_stats["routes"]
+    b_stats["files_parsed"] += e_stats["files_parsed"]
+    b_stats["files_cached"] += e_stats["files_cached"]
 
     oa_stats = client_ops = None
     found = load_openapi(root, b_dir)

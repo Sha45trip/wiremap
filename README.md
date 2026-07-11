@@ -120,7 +120,9 @@ untested endpoint handlers are flagged.
 **Wiring**
 - FastAPI routes (`@app.get`, `APIRouter` with prefixes), Flask routes and
   blueprints (`url_prefix`, multi-method), Django (`urls.py`
-  `path()`/`re_path()`/`include()`, class-based views, DRF routers)
+  `path()`/`re_path()`/`include()`, class-based views, DRF routers),
+  Express (`app.get(...)`, routers with `app.use()` mounts incl.
+  cross-file `require()`, auth-middleware detection)
 - OpenAPI: an `openapi.json` in the repo is ingested as the endpoint source
   of truth; generated-client calls (`api.getPetById(...)`) match by
   operationId
