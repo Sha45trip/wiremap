@@ -27,6 +27,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from .graph import Graph, NodeType, RiskFlag
 from .matcher import canonicalize
 
+try:    # optional extra: pip install wiremap[otlp]
+    from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
+        ExportTraceServiceRequest, ExportTraceServiceResponse)
+    from google.protobuf.json_format import MessageToDict
+    from google.protobuf.message import DecodeError
+    PROTOBUF_AVAILABLE = True
+except ImportError:
+    PROTOBUF_AVAILABLE = False
+
 STORE_VERSION = 1
 DEFAULT_WINDOW_HOURS = 24.0
 
@@ -90,6 +99,50 @@ def parse_otlp_traces(payload: dict) -> list[dict]:
                     "dur_ms": round((end - start) / 1_000_000, 1),
                 })
     return records
+
+
+def parse_otlp_protobuf(body: bytes) -> list[dict]:
+    """Protobuf ExportTraceServiceRequest -> the same records as the JSON
+    path: decoded via MessageToDict into the OTLP/JSON mapping and fed to
+    parse_otlp_traces, so both encodings share one semantics by
+    construction."""
+    msg = ExportTraceServiceRequest.FromString(body)
+    return parse_otlp_traces(MessageToDict(msg))
+
+
+def ingest_http_body(store: "RuntimeStore", body: bytes,
+                     content_type: str) -> tuple[int, bytes, str, int]:
+    """Shared POST /v1/traces handling for the collector and team server.
+    Returns (status, response_body, response_content_type, spans_ingested)."""
+    def jerr(code: int, msg: str):
+        return code, json.dumps({"error": msg}).encode(), "application/json", 0
+
+    if "application/x-protobuf" in content_type:
+        if not PROTOBUF_AVAILABLE:
+            return jerr(415, "protobuf ingestion needs `pip install "
+                             "wiremap[otlp]`; or point the exporter at the "
+                             "JSON encoding: OTEL_EXPORTER_OTLP_PROTOCOL="
+                             "http/json")
+        try:
+            records = parse_otlp_protobuf(body)
+        except DecodeError:
+            return jerr(400, "invalid protobuf body")
+        n = store.ingest(records)
+        store.save()
+        return (200, ExportTraceServiceResponse().SerializeToString(),
+                "application/x-protobuf", n)
+
+    if "application/json" in content_type:
+        try:
+            payload = json.loads(body)
+        except (ValueError, json.JSONDecodeError):
+            return jerr(400, "invalid JSON body")
+        n = store.ingest(parse_otlp_traces(payload))
+        store.save()
+        return 200, b'{"partialSuccess": {}}', "application/json", n
+
+    return jerr(415, "unsupported content type; send OTLP as "
+                     "application/json or application/x-protobuf")
 
 
 # ---------------------------------------------------------------------- store
@@ -282,27 +335,19 @@ class _OTLPHandler(BaseHTTPRequestHandler):
         if self.path.split("?")[0] != "/v1/traces":
             self._reply(404, {"error": "only POST /v1/traces is supported"})
             return
-        ctype = self.headers.get("Content-Type", "")
-        if "application/json" not in ctype:
-            self._reply(415, {"error": "only the OTLP JSON encoding is "
-                                       "supported; set OTEL_EXPORTER_OTLP_PROTOCOL=http/json"})
-            return
-        try:
-            length = int(self.headers.get("Content-Length", 0))
-            payload = json.loads(self.rfile.read(length))
-        except (ValueError, json.JSONDecodeError):
-            self._reply(400, {"error": "invalid JSON body"})
-            return
-        records = parse_otlp_traces(payload)
-        n = self.server.store.ingest(records)
-        self.server.store.save()
+        length = int(self.headers.get("Content-Length", 0))
+        status, body, ctype, n = ingest_http_body(
+            self.server.store, self.rfile.read(length),
+            self.headers.get("Content-Type", ""))
         self.server.spans_seen += n
-        self._reply(200, {"partialSuccess": {}})
+        self._raw_reply(status, body, ctype)
 
     def _reply(self, code: int, body: dict):
-        data = json.dumps(body).encode()
+        self._raw_reply(code, json.dumps(body).encode(), "application/json")
+
+    def _raw_reply(self, code: int, data: bytes, ctype: str):
         self.send_response(code)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)

@@ -298,14 +298,59 @@ class TestReceiver:
         assert store.routed["POST /api/orders"]
         assert len(store.unrouted) >= 25
 
-    def test_rejects_protobuf_content_type(self, server):
-        assert self._post(server, b"\x00", ctype="application/x-protobuf") == 415
+    def test_rejects_corrupt_protobuf(self, server):
+        assert self._post(server, b"\x00\xff\x01",
+                          ctype="application/x-protobuf") == 400
+
+    def test_rejects_unknown_content_type(self, server):
+        assert self._post(server, b"x", ctype="text/plain") == 415
+
+    def test_415_hint_when_protobuf_extra_missing(self, server, monkeypatch):
+        import wiremap.collector as collector
+        monkeypatch.setattr(collector, "PROTOBUF_AVAILABLE", False)
+        assert self._post(server, b"\x00",
+                          ctype="application/x-protobuf") == 415
+
+    def test_accepts_protobuf_batches(self, server):
+        from google.protobuf.json_format import ParseDict
+        from opentelemetry.proto.collector.trace.v1.trace_service_pb2 \
+            import ExportTraceServiceRequest
+        replay = _load_replay_module()
+        for batch in replay.build_batches():
+            body = ParseDict(batch,
+                             ExportTraceServiceRequest()).SerializeToString()
+            assert self._post(server, body,
+                              ctype="application/x-protobuf") == 200
+        store = RuntimeStore(server.store.path)
+        assert store.routed["POST /api/orders"]
 
     def test_rejects_wrong_path(self, server):
         assert self._post(server, b"{}", path="/v1/metrics") == 404
 
     def test_rejects_bad_json(self, server):
         assert self._post(server, b"{nope") == 400
+
+
+class TestProtobufJsonParity:
+    """ROADMAP-v2 5.1 acceptance: both encodings -> identical stores."""
+
+    def test_identical_records_and_store(self, tmp_path):
+        from google.protobuf.json_format import ParseDict
+        from opentelemetry.proto.collector.trace.v1.trace_service_pb2 \
+            import ExportTraceServiceRequest
+        from wiremap.collector import parse_otlp_protobuf
+        replay = _load_replay_module()
+        batches = replay.build_batches(now_ns=NOW_NS)
+
+        js = RuntimeStore(str(tmp_path / "json.json"))
+        pb = RuntimeStore(str(tmp_path / "pb.json"))
+        for batch in batches:
+            js.ingest(parse_otlp_traces(batch))
+            body = ParseDict(batch,
+                             ExportTraceServiceRequest()).SerializeToString()
+            pb.ingest(parse_otlp_protobuf(body))
+        assert js.routed == pb.routed
+        assert js.unrouted == pb.unrouted
 
 
 class TestDemoAcceptance:

@@ -51,6 +51,10 @@ rolling window (default 24h, `--window`), shown in the viewer's evidence
 panel. Spans are matched by `http.route`; spans with only a concrete URL
 path are matched against route patterns and marked lower-confidence.
 
+Both OTLP encodings are accepted: JSON works out of the box; for
+`http/protobuf` (most exporters' default) install the extra —
+`pip install wiremap[otlp]`.
+
 Try it on the bundled demo:
 
 ```bash

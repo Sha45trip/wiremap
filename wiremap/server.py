@@ -22,7 +22,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from .collector import RuntimeStore, parse_otlp_traces
+from .collector import RuntimeStore, ingest_http_body
 
 
 class TeamServer(ThreadingHTTPServer):
@@ -126,21 +126,17 @@ class _TeamHandler(BaseHTTPRequestHandler):
                                        "(server has WIREMAP_TOKEN set)"})
             return
         if p == "/v1/traces":
-            if "application/json" not in self.headers.get("Content-Type", ""):
-                self._reply(415, {"error": "only the OTLP JSON encoding is "
-                                           "supported; set "
-                                           "OTEL_EXPORTER_OTLP_PROTOCOL=http/json"})
-                return
-            try:
-                length = int(self.headers.get("Content-Length", 0))
-                payload = json.loads(self.rfile.read(length))
-            except (ValueError, json.JSONDecodeError):
-                self._reply(400, {"error": "invalid JSON body"})
-                return
-            n = self.server.store.ingest(parse_otlp_traces(payload))
-            self.server.store.save()
+            length = int(self.headers.get("Content-Length", 0))
+            status, body, ctype, n = ingest_http_body(
+                self.server.store, self.rfile.read(length),
+                self.headers.get("Content-Type", ""))
             self.server.spans_seen += n
-            self._reply(200, {"partialSuccess": {}})
+            data = body
+            self.send_response(status)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
         else:
             try:
                 res = self.server.rescan()

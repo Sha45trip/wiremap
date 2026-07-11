@@ -11,7 +11,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+otlp = ["opentelemetry-proto>=1.20"]
+dev = ["pytest>=8", "opentelemetry-proto>=1.20"]
 
 [project.scripts]
 wiremap = "wiremap.cli:main"

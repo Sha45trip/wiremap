@@ -85,19 +85,29 @@ def build_batches(now_ns=None):
 
 
 def main() -> int:
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 4318
+    args = [a for a in sys.argv[1:] if a != "--protobuf"]
+    protobuf = "--protobuf" in sys.argv
+    port = int(args[0]) if args else 4318
     url = f"http://localhost:{port}/v1/traces"
     total = 0
     for batch in build_batches():
         n = sum(len(ss["spans"]) for rs in batch["resourceSpans"]
                 for ss in rs["scopeSpans"])
+        if protobuf:
+            from google.protobuf.json_format import ParseDict
+            from opentelemetry.proto.collector.trace.v1.trace_service_pb2 \
+                import ExportTraceServiceRequest
+            data = ParseDict(batch,
+                             ExportTraceServiceRequest()).SerializeToString()
+            ctype = "application/x-protobuf"
+        else:
+            data, ctype = json.dumps(batch).encode(), "application/json"
         req = urllib.request.Request(
-            url, data=json.dumps(batch).encode(),
-            headers={"Content-Type": "application/json"}, method="POST")
+            url, data=data, headers={"Content-Type": ctype}, method="POST")
         with urllib.request.urlopen(req) as resp:
             assert resp.status == 200, resp.status
         total += n
-        print(f"  sent {n} spans -> {url}")
+        print(f"  sent {n} spans ({ctype.split('/')[-1]}) -> {url}")
     print(f"replayed {total} spans; now run: wiremap scan demo")
     return 0
 

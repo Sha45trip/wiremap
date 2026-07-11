@@ -167,12 +167,27 @@ def new_route(user=Depends(get_current_user)):
         finally:
             srv.shutdown()
 
-    def test_traces_reject_non_json(self, demo):
+    def test_traces_reject_corrupt_protobuf(self, demo):
         srv = _serve(demo)
         try:
-            code, _ = _req(srv, "/v1/traces", "POST", b"\x00",
+            code, _ = _req(srv, "/v1/traces", "POST", b"\x00\xff\x01",
                            ctype="application/x-protobuf")
-            assert code == 415
+            assert code == 400
+        finally:
+            srv.shutdown()
+
+    def test_traces_accept_protobuf(self, demo):
+        from google.protobuf.json_format import ParseDict
+        from opentelemetry.proto.collector.trace.v1.trace_service_pb2 \
+            import ExportTraceServiceRequest
+        srv = _serve(demo)
+        try:
+            batch = _replay_batches()[0]
+            body = ParseDict(batch,
+                             ExportTraceServiceRequest()).SerializeToString()
+            code, _ = _req(srv, "/v1/traces", "POST", body,
+                           ctype="application/x-protobuf")
+            assert code == 200
         finally:
             srv.shutdown()
 

@@ -4,7 +4,7 @@
       "id": "db:Base",
       "type": "db_model",
       "label": "Base",
-      "file": "app\\models.py",
+      "file": "app/models.py",
       "line": 3,
       "meta": {},
       "risk_score": 0.0,
@@ -14,7 +14,7 @@
       "id": "db:User",
       "type": "db_model",
       "label": "User",
-      "file": "app\\models.py",
+      "file": "app/models.py",
       "line": 6,
       "meta": {},
       "risk_score": 0.0,
@@ -24,7 +24,7 @@
       "id": "db:Order",
       "type": "db_model",
       "label": "Order",
-      "file": "app\\models.py",
+      "file": "app/models.py",
       "line": 9,
       "meta": {},
       "risk_score": 0.0,
@@ -34,7 +34,7 @@
       "id": "ep:GET /api/users/{user_id}",
       "type": "endpoint",
       "label": "GET /api/users/{user_id}",
-      "file": "app\\main.py",
+      "file": "app/main.py",
       "line": 10,
       "meta": {
         "handler": "app.main.get_user",
@@ -58,7 +58,7 @@
           "severity": "high",
           "category": "quality",
           "message": "Handler performs I/O with no try/except",
-          "evidence": "app\\main.py:11 calls `get` outside any try block",
+          "evidence": "app/main.py:11 calls `get` outside any try block",
           "suggestion": "Wrap I/O in try/except and return a controlled error response"
         }
       ]
@@ -67,7 +67,7 @@
       "id": "ep:POST /api/orders",
       "type": "endpoint",
       "label": "POST /api/orders",
-      "file": "app\\main.py",
+      "file": "app/main.py",
       "line": 15,
       "meta": {
         "handler": "app.main.create_order",
@@ -91,7 +91,7 @@
           "severity": "high",
           "category": "quality",
           "message": "Handler performs I/O with no try/except",
-          "evidence": "app\\main.py:17 calls `execute` outside any try block",
+          "evidence": "app/main.py:17 calls `execute` outside any try block",
           "suggestion": "Wrap I/O in try/except and return a controlled error response"
         },
         {
@@ -99,7 +99,7 @@
           "severity": "critical",
           "category": "security",
           "message": "Raw SQL built with string interpolation",
-          "evidence": "app\\main.py:17 `f\"INSERT INTO orders VALUES ({payload['id']})\"`",
+          "evidence": "app/main.py:17 `f\"INSERT INTO orders VALUES ({payload['id']})\"`",
           "suggestion": "Use parameterized queries or the ORM"
         },
         {
@@ -107,7 +107,7 @@
           "severity": "high",
           "category": "security",
           "message": "POST endpoint has no detectable auth dependency",
-          "evidence": "app\\main.py:15 handler `app.main.create_order`",
+          "evidence": "app/main.py:15 handler `app.main.create_order`",
           "suggestion": "Add an auth dependency (e.g. Depends(get_current_user)) or mark it public intentionally"
         },
         {
@@ -115,7 +115,7 @@
           "severity": "medium",
           "category": "operational",
           "message": "p95 latency 1200.0ms exceeds 1000ms",
-          "evidence": "app\\main.py:15 p95 1200.0ms over 60 requests in 24h",
+          "evidence": "app/main.py:15 p95 1200.0ms over 60 requests in 24h",
           "suggestion": "Profile the handler; cache or move slow work off the request path"
         },
         {
@@ -123,7 +123,7 @@
           "severity": "high",
           "category": "operational",
           "message": "3.3% of responses are 5xx",
-          "evidence": "app\\main.py:15 error rate 3.3% over 60 requests in 24h",
+          "evidence": "app/main.py:15 error rate 3.3% over 60 requests in 24h",
           "suggestion": "Inspect server logs for the failing responses; add error handling where they originate"
         },
         {
@@ -131,7 +131,7 @@
           "severity": "critical",
           "category": "operational",
           "message": "Top-decile traffic (60 req/24h) on an endpoint with high/critical static flags",
-          "evidence": "app\\main.py:15 carries missing_auth, no_error_handling, sql_injection_risk while serving 60 requests",
+          "evidence": "app/main.py:15 carries missing_auth, no_error_handling, sql_injection_risk while serving 60 requests",
           "suggestion": "Fix the static issues here first \u2014 this endpoint has the highest blast radius in the system"
         }
       ]
@@ -140,7 +140,7 @@
       "id": "fn:app.services.log_event",
       "type": "function",
       "label": "log_event",
-      "file": "app\\services.py",
+      "file": "app/services.py",
       "line": 13,
       "meta": {
         "complexity": 1,
@@ -154,7 +154,7 @@
       "id": "ep:GET /api/orders/{order_id}",
       "type": "endpoint",
       "label": "GET /api/orders/{order_id}",
-      "file": "app\\main.py",
+      "file": "app/main.py",
       "line": 22,
       "meta": {
         "handler": "app.main.get_order",
@@ -183,7 +183,7 @@
       "id": "fn:app.services.fetch_orders",
       "type": "function",
       "label": "fetch_orders",
-      "file": "app\\services.py",
+      "file": "app/services.py",
       "line": 3,
       "meta": {
         "complexity": 1,
@@ -197,7 +197,7 @@
       "id": "fn:app.services.calc_totals",
       "type": "function",
       "label": "calc_totals",
-      "file": "app\\services.py",
+      "file": "app/services.py",
       "line": 6,
       "meta": {
         "complexity": 3,
@@ -211,7 +211,7 @@
       "id": "ep:GET /api/reports/summary",
       "type": "endpoint",
       "label": "GET /api/reports/summary",
-      "file": "app\\main.py",
+      "file": "app/main.py",
       "line": 30,
       "meta": {
         "handler": "app.main.report_summary",
@@ -231,7 +231,7 @@
           "severity": "medium",
           "category": "contract",
           "message": "Statically unreferenced and received no traffic in the last 24h",
-          "evidence": "app\\main.py:30 0 requests in window, no frontend call site",
+          "evidence": "app/main.py:30 0 requests in window, no frontend call site",
           "suggestion": "Remove the endpoint, or document the external consumer that keeps it alive"
         }
       ]
@@ -240,17 +240,17 @@
       "id": "cmp:loadStats",
       "type": "component",
       "label": "loadStats",
-      "file": "src\\Dashboard.jsx",
+      "file": "src/Dashboard.jsx",
       "line": 2,
       "meta": {},
       "risk_score": 0.0,
       "risk_flags": []
     },
     {
-      "id": "call:src\\Dashboard.jsx:3",
+      "id": "call:src/Dashboard.jsx:3",
       "type": "api_call",
       "label": "GET /api/stats/overview",
-      "file": "src\\Dashboard.jsx",
+      "file": "src/Dashboard.jsx",
       "line": 3,
       "meta": {
         "method": "GET",
@@ -266,7 +266,7 @@
           "severity": "medium",
           "category": "quality",
           "message": "API call has no .catch and is not inside try/catch",
-          "evidence": "src\\Dashboard.jsx:3 `GET /api/stats/overview`",
+          "evidence": "src/Dashboard.jsx:3 `GET /api/stats/overview`",
           "suggestion": "Handle the rejected promise; show an error state in the UI"
         },
         {
@@ -274,7 +274,7 @@
           "severity": "low",
           "category": "operational",
           "message": "API call has no timeout/abort signal",
-          "evidence": "src\\Dashboard.jsx:3 `GET /api/stats/overview`",
+          "evidence": "src/Dashboard.jsx:3 `GET /api/stats/overview`",
           "suggestion": "Pass an AbortController signal or axios timeout"
         },
         {
@@ -282,7 +282,7 @@
           "severity": "high",
           "category": "contract",
           "message": "Frontend calls GET /api/stats/overview but no backend route matches",
-          "evidence": "src\\Dashboard.jsx:3",
+          "evidence": "src/Dashboard.jsx:3",
           "suggestion": "Endpoint missing, renamed, or typo'd \u2014 this will 404 in production"
         }
       ]
@@ -291,17 +291,17 @@
       "id": "cmp:loadOrder",
       "type": "component",
       "label": "loadOrder",
-      "file": "src\\OrderForm.jsx",
+      "file": "src/OrderForm.jsx",
       "line": 9,
       "meta": {},
       "risk_score": 0.0,
       "risk_flags": []
     },
     {
-      "id": "call:src\\OrderForm.jsx:10",
+      "id": "call:src/OrderForm.jsx:10",
       "type": "api_call",
       "label": "GET /api/orders/:param",
-      "file": "src\\OrderForm.jsx",
+      "file": "src/OrderForm.jsx",
       "line": 10,
       "meta": {
         "method": "GET",
@@ -323,7 +323,7 @@
           "severity": "low",
           "category": "operational",
           "message": "API call has no timeout/abort signal",
-          "evidence": "src\\OrderForm.jsx:10 `GET /api/orders/:param`",
+          "evidence": "src/OrderForm.jsx:10 `GET /api/orders/:param`",
           "suggestion": "Pass an AbortController signal or axios timeout"
         },
         {
@@ -331,7 +331,7 @@
           "severity": "high",
           "category": "contract",
           "message": "Frontend reads status \u2014 not declared by response model OrderOut",
-          "evidence": "src\\OrderForm.jsx:10 reads id, status, total; app\\main.py:22 declares id, total",
+          "evidence": "src/OrderForm.jsx:10 reads id, status, total; app/main.py:22 declares id, total",
           "suggestion": "Add the field to the response model or stop reading it \u2014 it is undefined at runtime"
         }
       ]
@@ -340,17 +340,17 @@
       "id": "cmp:submit",
       "type": "component",
       "label": "submit",
-      "file": "src\\OrderForm.jsx",
+      "file": "src/OrderForm.jsx",
       "line": 4,
       "meta": {},
       "risk_score": 0.0,
       "risk_flags": []
     },
     {
-      "id": "call:src\\OrderForm.jsx:6",
+      "id": "call:src/OrderForm.jsx:6",
       "type": "api_call",
       "label": "POST /api/orders",
-      "file": "src\\OrderForm.jsx",
+      "file": "src/OrderForm.jsx",
       "line": 6,
       "meta": {
         "method": "POST",
@@ -366,7 +366,7 @@
           "severity": "medium",
           "category": "quality",
           "message": "API call has no .catch and is not inside try/catch",
-          "evidence": "src\\OrderForm.jsx:6 `POST /api/orders`",
+          "evidence": "src/OrderForm.jsx:6 `POST /api/orders`",
           "suggestion": "Handle the rejected promise; show an error state in the UI"
         },
         {
@@ -374,7 +374,7 @@
           "severity": "low",
           "category": "operational",
           "message": "API call has no timeout/abort signal",
-          "evidence": "src\\OrderForm.jsx:6 `POST /api/orders`",
+          "evidence": "src/OrderForm.jsx:6 `POST /api/orders`",
           "suggestion": "Pass an AbortController signal or axios timeout"
         }
       ]
@@ -383,17 +383,17 @@
       "id": "cmp:UserProfile",
       "type": "component",
       "label": "UserProfile",
-      "file": "src\\UserProfile.jsx",
+      "file": "src/UserProfile.jsx",
       "line": 3,
       "meta": {},
       "risk_score": 0.0,
       "risk_flags": []
     },
     {
-      "id": "call:src\\UserProfile.jsx:6",
+      "id": "call:src/UserProfile.jsx:6",
       "type": "api_call",
       "label": "GET /api/users/:param",
-      "file": "src\\UserProfile.jsx",
+      "file": "src/UserProfile.jsx",
       "line": 6,
       "meta": {
         "method": "GET",
@@ -409,7 +409,7 @@
           "severity": "low",
           "category": "operational",
           "message": "API call has no timeout/abort signal",
-          "evidence": "src\\UserProfile.jsx:6 `GET /api/users/:param`",
+          "evidence": "src/UserProfile.jsx:6 `GET /api/users/:param`",
           "suggestion": "Pass an AbortController signal or axios timeout"
         }
       ]
@@ -487,9 +487,9 @@
       "risk_flags": []
     },
     {
-      "id": "cmp:loadStats->call:src\\Dashboard.jsx:3",
+      "id": "cmp:loadStats->call:src/Dashboard.jsx:3",
       "source": "cmp:loadStats",
-      "target": "call:src\\Dashboard.jsx:3",
+      "target": "call:src/Dashboard.jsx:3",
       "type": "makes_call",
       "confidence": "certain",
       "meta": {},
@@ -497,9 +497,9 @@
       "risk_flags": []
     },
     {
-      "id": "cmp:loadOrder->call:src\\OrderForm.jsx:10",
+      "id": "cmp:loadOrder->call:src/OrderForm.jsx:10",
       "source": "cmp:loadOrder",
-      "target": "call:src\\OrderForm.jsx:10",
+      "target": "call:src/OrderForm.jsx:10",
       "type": "makes_call",
       "confidence": "certain",
       "meta": {},
@@ -507,9 +507,9 @@
       "risk_flags": []
     },
     {
-      "id": "cmp:submit->call:src\\OrderForm.jsx:6",
+      "id": "cmp:submit->call:src/OrderForm.jsx:6",
       "source": "cmp:submit",
-      "target": "call:src\\OrderForm.jsx:6",
+      "target": "call:src/OrderForm.jsx:6",
       "type": "makes_call",
       "confidence": "certain",
       "meta": {},
@@ -517,9 +517,9 @@
       "risk_flags": []
     },
     {
-      "id": "cmp:UserProfile->call:src\\UserProfile.jsx:6",
+      "id": "cmp:UserProfile->call:src/UserProfile.jsx:6",
       "source": "cmp:UserProfile",
-      "target": "call:src\\UserProfile.jsx:6",
+      "target": "call:src/UserProfile.jsx:6",
       "type": "makes_call",
       "confidence": "certain",
       "meta": {},
@@ -527,8 +527,8 @@
       "risk_flags": []
     },
     {
-      "id": "call:src\\OrderForm.jsx:10=>ep:GET /api/orders/{order_id}",
-      "source": "call:src\\OrderForm.jsx:10",
+      "id": "call:src/OrderForm.jsx:10=>ep:GET /api/orders/{order_id}",
+      "source": "call:src/OrderForm.jsx:10",
       "target": "ep:GET /api/orders/{order_id}",
       "type": "http",
       "confidence": "probable",
@@ -540,8 +540,8 @@
       "risk_flags": []
     },
     {
-      "id": "call:src\\OrderForm.jsx:6=>ep:POST /api/orders",
-      "source": "call:src\\OrderForm.jsx:6",
+      "id": "call:src/OrderForm.jsx:6=>ep:POST /api/orders",
+      "source": "call:src/OrderForm.jsx:6",
       "target": "ep:POST /api/orders",
       "type": "http",
       "confidence": "certain",
@@ -553,8 +553,8 @@
       "risk_flags": []
     },
     {
-      "id": "call:src\\UserProfile.jsx:6=>ep:GET /api/users/{user_id}",
-      "source": "call:src\\UserProfile.jsx:6",
+      "id": "call:src/UserProfile.jsx:6=>ep:GET /api/users/{user_id}",
+      "source": "call:src/UserProfile.jsx:6",
       "target": "ep:GET /api/users/{user_id}",
       "type": "http",
       "confidence": "probable",
