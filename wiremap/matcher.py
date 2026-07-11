@@ -104,5 +104,20 @@ def match(graph: Graph) -> dict:
                            "work — verify and document",
             ))
 
+    # discovery guard (bench 4.1): when almost nothing matches on a codebase
+    # with plenty of calls, the orphans are far more likely to reflect an
+    # unsupported route-registration style than 90 real 404s — downgrade
+    total = matched + orphan_calls
+    guarded = total >= 20 and matched / total < 0.25
+    if guarded:
+        for call in graph.nodes_of(NodeType.API_CALL):
+            for f in call.risk_flags:
+                if f["code"] == "orphan_call":
+                    f["severity"] = "low"
+                    f["message"] += (" (low confidence: only "
+                                     f"{matched}/{total} calls matched — "
+                                     "route discovery may not cover this "
+                                     "stack)")
+
     return {"matched": matched, "orphan_calls": orphan_calls,
-            "unused_endpoints": dead_endpoints}
+            "unused_endpoints": dead_endpoints, "discovery_guard": guarded}

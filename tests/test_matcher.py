@@ -47,7 +47,8 @@ class TestMatch:
         ep = g.add_node(_endpoint("GET", "/users/{user_id}"))
         call = g.add_node(_call("GET", "/users/42"))
         stats = match(g)
-        assert stats == {"matched": 1, "orphan_calls": 0, "unused_endpoints": 0}
+        assert stats == {"matched": 1, "orphan_calls": 0,
+                         "unused_endpoints": 0, "discovery_guard": False}
         wires = g.edges_of(EdgeType.HTTP)
         assert len(wires) == 1
         assert wires[0].source == call.id and wires[0].target == ep.id
@@ -99,3 +100,36 @@ class TestMatch:
         g.add_node(_call("GET", "/users"))
         match(g)
         assert "unused_endpoint" not in _flags(ep)
+
+
+class TestDiscoveryGuard:
+    """bench 4.1: mass orphans on unsupported stacks get downgraded."""
+
+    def test_low_match_rate_downgrades_orphans(self):
+        g = Graph()
+        g.add_node(_endpoint("GET", "/only"))
+        g.add_node(_call("GET", "/only", line=999))
+        calls = [g.add_node(_call("GET", f"/missing/{i}", line=i))
+                 for i in range(24)]
+        stats = match(g)
+        assert stats["discovery_guard"] is True
+        flag = calls[0].risk_flags[0]
+        assert flag["severity"] == "low"
+        assert "route discovery may not cover" in flag["message"]
+
+    def test_high_match_rate_keeps_orphans_high(self):
+        g = Graph()
+        for i in range(24):
+            g.add_node(_endpoint("GET", f"/r{i}"))
+            g.add_node(_call("GET", f"/r{i}", line=i))
+        orphan = g.add_node(_call("GET", "/nowhere", line=999))
+        stats = match(g)
+        assert stats["discovery_guard"] is False
+        assert orphan.risk_flags[0]["severity"] == "high"
+
+    def test_small_apps_unaffected(self):
+        g = Graph()
+        orphan = g.add_node(_call("GET", "/nowhere"))
+        stats = match(g)
+        assert stats["discovery_guard"] is False
+        assert orphan.risk_flags[0]["severity"] == "high"

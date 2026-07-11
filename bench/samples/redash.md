@@ -1,0 +1,167 @@
+# redash — flag samples for labeling
+
+Verdict legend: TP (real issue), FP (wrong), DEBATABLE (defensible but low-value).
+
+## missing_auth (1 total, 1 sampled)
+- [ ] `ep:POST /setup`
+  - evidence: handlers/setup.py:55 handler `handlers.setup.setup`
+  - message: POST endpoint has no detectable auth dependency
+  - verdict: 
+
+## no_error_handling (95 total, 8 sampled)
+- [ ] `call:app/pages/admin/OutdatedQueries.jsx:147`
+  - evidence: app/pages/admin/OutdatedQueries.jsx:147 `GET /api/admin/queries/outdated`
+  - message: API call has no .catch and is not inside try/catch
+  - verdict: 
+- [ ] `call:app/services/dashboard.js:175`
+  - evidence: app/services/dashboard.js:175 `GET /api/dashboards/favorites`
+  - message: API call has no .catch and is not inside try/catch
+  - verdict: 
+- [ ] `call:app/services/destination.js:10`
+  - evidence: app/services/destination.js:10 `POST /api/destinations/:param`
+  - message: API call has no .catch and is not inside try/catch
+  - verdict: 
+- [ ] `call:app/services/data-source.js:18`
+  - evidence: app/services/data-source.js:18 `POST /api/data_sources/:param`
+  - message: API call has no .catch and is not inside try/catch
+  - verdict: 
+- [ ] `call:app/services/destination.js:6`
+  - evidence: app/services/destination.js:6 `GET /api/destinations`
+  - message: API call has no .catch and is not inside try/catch
+  - verdict: 
+- [ ] `call:app/services/visualization.js:6`
+  - evidence: app/services/visualization.js:6 `POST <dynamic>`
+  - message: API call has no .catch and is not inside try/catch
+  - verdict: 
+- [ ] `call:app/services/destination.js:11`
+  - evidence: app/services/destination.js:11 `DELETE /api/destinations/:param`
+  - message: API call has no .catch and is not inside try/catch
+  - verdict: 
+- [ ] `call:app/services/alert.js:36`
+  - evidence: app/services/alert.js:36 `DELETE /api/alerts/:param`
+  - message: API call has no .catch and is not inside try/catch
+  - verdict: 
+
+## no_timeout (111 total, 8 sampled)
+- [ ] `call:app/services/getTags.js:8`
+  - evidence: app/services/getTags.js:8 `GET <dynamic>`
+  - message: API call has no timeout/abort signal
+  - verdict: 
+- [ ] `call:app/services/alert-subscription.js:6`
+  - evidence: app/services/alert-subscription.js:6 `DELETE /api/alerts/:param/subscriptions/:param`
+  - message: API call has no timeout/abort signal
+  - verdict: 
+- [ ] `call:app/components/PermissionsEditorDialog/index.jsx:27`
+  - evidence: app/components/PermissionsEditorDialog/index.jsx:27 `GET <dynamic>`
+  - message: API call has no timeout/abort signal
+  - verdict: 
+- [ ] `call:app/services/recordEvent.js:10`
+  - evidence: app/services/recordEvent.js:10 `POST /api/events`
+  - message: API call has no timeout/abort signal
+  - verdict: 
+- [ ] `call:app/services/data-source.js:14`
+  - evidence: app/services/data-source.js:14 `GET /api/data_sources`
+  - message: API call has no timeout/abort signal
+  - verdict: 
+- [ ] `call:app/services/data-source.js:16`
+  - evidence: app/services/data-source.js:16 `GET /api/data_sources/types`
+  - message: API call has no timeout/abort signal
+  - verdict: 
+- [ ] `call:app/services/user.js:115`
+  - evidence: app/services/user.js:115 `GET /api/users`
+  - message: API call has no timeout/abort signal
+  - verdict: 
+- [ ] `call:app/services/destination.js:8`
+  - evidence: app/services/destination.js:8 `GET /api/destinations/types`
+  - message: API call has no timeout/abort signal
+  - verdict: 
+
+## orphan_call (90 total, 8 sampled)
+- [ ] `call:app/services/visualization.js:7`
+  - evidence: app/services/visualization.js:7
+  - message: Frontend calls DELETE /api/visualizations/:param but no backend route matches (low confidence: only 5/95 calls matched — route discovery may not cover this stack)
+  - verdict: 
+- [ ] `call:app/services/query.js:396`
+  - evidence: app/services/query.js:396
+  - message: Frontend calls DELETE /api/queries/:param/favorite but no backend route matches (low confidence: only 5/95 calls matched — route discovery may not cover this stack)
+  - verdict: 
+- [ ] `call:app/services/user.js:115`
+  - evidence: app/services/user.js:115
+  - message: Frontend calls GET /api/users but no backend route matches (low confidence: only 5/95 calls matched — route discovery may not cover this stack)
+  - verdict: 
+- [ ] `call:app/services/query.js:395`
+  - evidence: app/services/query.js:395
+  - message: Frontend calls POST /api/queries/:param/favorite but no backend route matches (low confidence: only 5/95 calls matched — route discovery may not cover this stack)
+  - verdict: 
+- [ ] `call:app/services/recordEvent.js:10`
+  - evidence: app/services/recordEvent.js:10
+  - message: Frontend calls POST /api/events but no backend route matches (low confidence: only 5/95 calls matched — route discovery may not cover this stack)
+  - verdict: 
+- [ ] `call:app/services/query.js:382`
+  - evidence: app/services/query.js:382
+  - message: Frontend calls GET /api/queries but no backend route matches (low confidence: only 5/95 calls matched — route discovery may not cover this stack)
+  - verdict: 
+- [ ] `call:app/services/user.js:117`
+  - evidence: app/services/user.js:117
+  - message: Frontend calls POST /api/users but no backend route matches (low confidence: only 5/95 calls matched — route discovery may not cover this stack)
+  - verdict: 
+- [ ] `call:app/services/databricks-data-source.js:22`
+  - evidence: app/services/databricks-data-source.js:22
+  - message: Frontend calls GET /api/databricks/databases/:param but no backend route matches (low confidence: only 5/95 calls matched — route discovery may not cover this stack)
+  - verdict: 
+
+## unresolvable_url (16 total, 8 sampled)
+- [ ] `call:app/components/PermissionsEditorDialog/index.jsx:42`
+  - evidence: app/components/PermissionsEditorDialog/index.jsx:42
+  - message: URL is fully dynamic; wire could not be traced statically
+  - verdict: 
+- [ ] `call:app/services/dashboard.js:170`
+  - evidence: app/services/dashboard.js:170
+  - message: URL is fully dynamic; wire could not be traced statically
+  - verdict: 
+- [ ] `call:app/pages/dashboards/components/ShareDashboardDialog.jsx:56`
+  - evidence: app/pages/dashboards/components/ShareDashboardDialog.jsx:56
+  - message: URL is fully dynamic; wire could not be traced statically
+  - verdict: 
+- [ ] `call:app/lib/hooks/useSearchResults.js:13`
+  - evidence: app/lib/hooks/useSearchResults.js:13
+  - message: URL is fully dynamic; wire could not be traced statically
+  - verdict: 
+- [ ] `call:app/services/visualization.js:6`
+  - evidence: app/services/visualization.js:6
+  - message: URL is fully dynamic; wire could not be traced statically
+  - verdict: 
+- [ ] `call:app/components/PermissionsEditorDialog/index.jsx:27`
+  - evidence: app/components/PermissionsEditorDialog/index.jsx:27
+  - message: URL is fully dynamic; wire could not be traced statically
+  - verdict: 
+- [ ] `call:app/components/PermissionsEditorDialog/index.jsx:50`
+  - evidence: app/components/PermissionsEditorDialog/index.jsx:50
+  - message: URL is fully dynamic; wire could not be traced statically
+  - verdict: 
+- [ ] `call:app/services/user.js:18`
+  - evidence: app/services/user.js:18
+  - message: URL is fully dynamic; wire could not be traced statically
+  - verdict: 
+
+## unused_endpoint (5 total, 5 sampled)
+- [ ] `ep:GET /setup`
+  - evidence: handlers/setup.py:55
+  - message: No frontend call site references this endpoint
+  - verdict: 
+- [ ] `ep:POST /setup`
+  - evidence: handlers/setup.py:55
+  - message: No frontend call site references this endpoint
+  - verdict: 
+- [ ] `ep:GET /oauth/google`
+  - evidence: authentication/google_oauth.py:88
+  - message: No frontend call site references this endpoint
+  - verdict: 
+- [ ] `ep:GET /<org_slug>/oauth/google`
+  - evidence: authentication/google_oauth.py:83
+  - message: No frontend call site references this endpoint
+  - verdict: 
+- [ ] `ep:GET /oauth/google_callback`
+  - evidence: authentication/google_oauth.py:100
+  - message: No frontend call site references this endpoint
+  - verdict: 

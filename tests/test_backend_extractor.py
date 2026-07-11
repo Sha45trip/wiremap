@@ -80,6 +80,21 @@ class TestPlantedFlags:
             assert flag["suggestion"], flag
 
 
+class TestUnparseableFiles:
+    def test_syntax_error_file_skipped_not_fatal(self, tmp_path):
+        # found by the 4.1 corpus: real repos contain py2/broken files
+        from wiremap.graph import Graph
+        from wiremap.extractors.python_backend import extract_backend
+        (tmp_path / "broken.py").write_text("def f(:\n  pass")
+        (tmp_path / "ok.py").write_text(
+            "from fastapi import FastAPI\napp = FastAPI()\n\n"
+            "@app.get('/ok')\ndef ok():\n    return {}\n")
+        g = Graph()
+        stats = extract_backend(str(tmp_path), g)
+        assert stats["files_parsed"] == 2
+        assert "ep:GET /ok" in g.nodes
+
+
 class TestNearMisses:
     def test_no_missing_auth_when_depends_present(self, backend_graph):
         assert "missing_auth" not in node_flags(backend_graph, EP_DELETE)

@@ -156,6 +156,51 @@ def scan(args) -> int:
     return 0
 
 
+def explain(args) -> int:
+    """Print exactly how a node's or edge's risk score is computed."""
+    root = os.path.abspath(args.project_root)
+    graph_path = os.path.join(args.out or os.path.join(root, ".wiremap"),
+                              "graph.json")
+    try:
+        with open(graph_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"error: cannot read {graph_path}: {e} — run `wiremap scan` first",
+              file=sys.stderr)
+        return 2
+    elems = {e["id"]: e for e in data["nodes"] + data["edges"]}
+    elem = elems.get(args.node_id)
+    if elem is None:
+        hits = [i for i in elems if args.node_id.lower() in i.lower()]
+        print(f"error: no element `{args.node_id}`"
+              + (f"; close matches: {', '.join(hits[:5])}" if hits else ""),
+              file=sys.stderr)
+        return 2
+
+    config = load_config(root)
+    weights, sev = config["weights"], config["severity"]
+    print(f"{elem['id']}\n  label: {elem.get('label', '')}\n"
+          f"  score: {elem['risk_score']} / 100\n")
+    total = 0.0
+    for f in elem["risk_flags"]:
+        pts = sev.get(f["severity"], 1) * weights.get(f["category"], 1.0)
+        total += pts
+        print(f"  {pts:>5.1f}  = severity {f['severity']} ({sev.get(f['severity'], 1)})"
+              f" x weight {f['category']} ({weights.get(f['category'], 1.0)})"
+              f"   [{f['code']}]")
+    if elem["risk_flags"]:
+        print(f"\n  raw total {total:g}; normalized = min(total/20*100, 100)"
+              f" = {min(round(total / 20 * 100, 1), 100)}")
+    else:
+        print("  no flags on this element")
+    if elem["id"] in {e["id"] for e in data["edges"]}:
+        ends = [elems.get(elem["source"]), elems.get(elem["target"])]
+        end_risk = max((n["risk_score"] for n in ends if n), default=0)
+        print(f"  edge rule: max(own {min(round(total / 20 * 100, 1), 100)},"
+              f" 0.8 x max endpoint risk {end_risk}) = {elem['risk_score']}")
+    return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="wiremap",
                                 description="Full-stack wire mapping and risk flags")
@@ -214,6 +259,14 @@ def main(argv=None) -> int:
                           "this severity (merge gate)")
     pdf.set_defaults(func=lambda a: run_diff(a.old_graph, a.new_graph,
                                              a.format, a.fail_on))
+
+    pe = sub.add_parser("explain",
+                        help="show exactly how an element's risk score "
+                             "is computed from its flags")
+    pe.add_argument("project_root")
+    pe.add_argument("node_id", help="node or edge id from graph.json")
+    pe.add_argument("--out", help="output dir (default: <root>/.wiremap)")
+    pe.set_defaults(func=explain)
 
     args = p.parse_args(argv)
     return args.func(args)

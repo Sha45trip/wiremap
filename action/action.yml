@@ -49,7 +49,7 @@ runs:
       run: |
         BASE="${GITHUB_BASE_REF:-main}"
         git fetch --no-tags --depth=1 origin "$BASE"
-        git worktree add --detach "$RUNNER_TEMP/wiremap-base-src" "origin/$BASE"
+        git worktree add --detach "$RUNNER_TEMP/wiremap-base-src" FETCH_HEAD
         ARGS=()
         [ -n "${{ inputs.backend }}" ] && ARGS+=(--backend "$RUNNER_TEMP/wiremap-base-src/${{ inputs.backend }}")
         [ -n "${{ inputs.frontend }}" ] && ARGS+=(--frontend "$RUNNER_TEMP/wiremap-base-src/${{ inputs.frontend }}")

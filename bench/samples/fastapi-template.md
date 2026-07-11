@@ -1,0 +1,119 @@
+# fastapi-template — flag samples for labeling
+
+Verdict legend: TP (real issue), FP (wrong), DEBATABLE (defensible but low-value).
+
+## hub_function (4 total, 4 sampled)
+- [ ] `fn:app.utils.send_email`
+  - evidence: app/utils.py:33 `send_email` fan-in 3
+  - message: 3 wires route through this single function
+  - verdict: 
+- [ ] `fn:app.utils.render_email_template`
+  - evidence: app/utils.py:25 `render_email_template` fan-in 3
+  - message: 3 wires route through this single function
+  - verdict: 
+- [ ] `fn:app.core.security.get_password_hash`
+  - evidence: app/core/security.py:35 `get_password_hash` fan-in 4
+  - message: 4 wires route through this single function
+  - verdict: 
+- [ ] `fn:app.crud.get_user_by_email`
+  - evidence: app/crud.py:34 `get_user_by_email` fan-in 8
+  - message: 8 wires route through this single function
+  - verdict: 
+
+## missing_auth (7 total, 7 sampled)
+- [ ] `ep:POST /items`
+  - evidence: app/api/routes/items.py:62 handler `app.api.routes.items.create_item`
+  - message: POST endpoint has no detectable auth dependency
+  - verdict: 
+- [ ] `ep:DELETE /items/{id}`
+  - evidence: app/api/routes/items.py:100 handler `app.api.routes.items.delete_item`
+  - message: DELETE endpoint has no detectable auth dependency
+  - verdict: 
+- [ ] `ep:PATCH /users/me/password`
+  - evidence: app/api/routes/users.py:104 handler `app.api.routes.users.update_password_me`
+  - message: PATCH endpoint has no detectable auth dependency
+  - verdict: 
+- [ ] `ep:DELETE /users/me`
+  - evidence: app/api/routes/users.py:133 handler `app.api.routes.users.delete_user_me`
+  - message: DELETE endpoint has no detectable auth dependency
+  - verdict: 
+- [ ] `ep:POST /password-recovery/{email}`
+  - evidence: app/api/routes/login.py:54 handler `app.api.routes.login.recover_password`
+  - message: POST endpoint has no detectable auth dependency
+  - verdict: 
+- [ ] `ep:PUT /items/{id}`
+  - evidence: app/api/routes/items.py:76 handler `app.api.routes.items.update_item`
+  - message: PUT endpoint has no detectable auth dependency
+  - verdict: 
+- [ ] `ep:POST /reset-password`
+  - evidence: app/api/routes/login.py:78 handler `app.api.routes.login.reset_password`
+  - message: POST endpoint has no detectable auth dependency
+  - verdict: 
+
+## no_error_handling (11 total, 8 sampled)
+- [ ] `ep:POST /items`
+  - evidence: app/api/routes/items.py:70 calls `commit` outside any try block
+  - message: Handler performs I/O with no try/except
+  - verdict: 
+- [ ] `ep:POST /private/users`
+  - evidence: app/api/routes/private.py:36 calls `commit` outside any try block
+  - message: Handler performs I/O with no try/except
+  - verdict: 
+- [ ] `ep:DELETE /users/{user_id}`
+  - evidence: app/api/routes/users.py:221 calls `get` outside any try block
+  - message: Handler performs I/O with no try/except
+  - verdict: 
+- [ ] `ep:PATCH /users/{user_id}`
+  - evidence: app/api/routes/users.py:197 calls `get` outside any try block
+  - message: Handler performs I/O with no try/except
+  - verdict: 
+- [ ] `ep:PATCH /users/me/password`
+  - evidence: app/api/routes/users.py:120 calls `commit` outside any try block
+  - message: Handler performs I/O with no try/except
+  - verdict: 
+- [ ] `ep:PATCH /users/me`
+  - evidence: app/api/routes/users.py:98 calls `commit` outside any try block
+  - message: Handler performs I/O with no try/except
+  - verdict: 
+- [ ] `ep:GET /items/{id}`
+  - evidence: app/api/routes/items.py:53 calls `get` outside any try block
+  - message: Handler performs I/O with no try/except
+  - verdict: 
+- [ ] `ep:DELETE /users/me`
+  - evidence: app/api/routes/users.py:141 calls `delete` outside any try block
+  - message: Handler performs I/O with no try/except
+  - verdict: 
+
+## unused_endpoint (23 total, 8 sampled)
+- [ ] `ep:DELETE /items/{id}`
+  - evidence: app/api/routes/items.py:100
+  - message: No frontend call site references this endpoint
+  - verdict: 
+- [ ] `ep:POST /reset-password`
+  - evidence: app/api/routes/login.py:78
+  - message: No frontend call site references this endpoint
+  - verdict: 
+- [ ] `ep:GET /utils/health-check`
+  - evidence: app/api/routes/utils.py:30
+  - message: No frontend call site references this endpoint
+  - verdict: 
+- [ ] `ep:POST /login/test-token`
+  - evidence: app/api/routes/login.py:46
+  - message: No frontend call site references this endpoint
+  - verdict: 
+- [ ] `ep:PATCH /users/me`
+  - evidence: app/api/routes/users.py:82
+  - message: No frontend call site references this endpoint
+  - verdict: 
+- [ ] `ep:POST /items`
+  - evidence: app/api/routes/items.py:62
+  - message: No frontend call site references this endpoint
+  - verdict: 
+- [ ] `ep:GET /users/{user_id}`
+  - evidence: app/api/routes/users.py:163
+  - message: No frontend call site references this endpoint
+  - verdict: 
+- [ ] `ep:DELETE /users/{user_id}`
+  - evidence: app/api/routes/users.py:215
+  - message: No frontend call site references this endpoint
+  - verdict: 

@@ -377,9 +377,14 @@ def extract_frontend(root: str, graph: Graph,
             if lang is None:
                 continue
             full = os.path.join(dirpath, fn)
-            rel = os.path.relpath(full, root)
-            with open(full, "rb") as f:
-                src = f.read()
+            # forward slashes everywhere: rel feeds node ids, evidence
+            # strings, and cache keys, which must match across OSes
+            rel = os.path.relpath(full, root).replace(os.sep, "/")
+            try:
+                with open(full, "rb") as f:
+                    src = f.read()
+            except OSError:
+                continue    # unreadable (permissions, >MAX_PATH on Windows)
             seen_files.add(rel)
             sha = content_hash(src)
             records = cache.get("frontend", rel, sha) if cache else None

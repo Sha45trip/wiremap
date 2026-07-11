@@ -89,13 +89,21 @@ class Graph:
     def edges_of(self, etype: EdgeType) -> list[Edge]:
         return [e for e in self.edges.values() if e.type == etype]
 
+    @staticmethod
+    def _append_unique(flags: list, flag: RiskFlag) -> None:
+        d = asdict(flag)
+        # same code + evidence = same root cause; never stack duplicates
+        if not any(f["code"] == d["code"] and f["evidence"] == d["evidence"]
+                   for f in flags):
+            flags.append(d)
+
     def flag_node(self, node_id: str, flag: RiskFlag) -> None:
         if node_id in self.nodes:
-            self.nodes[node_id].risk_flags.append(asdict(flag))
+            self._append_unique(self.nodes[node_id].risk_flags, flag)
 
     def flag_edge(self, edge_id: str, flag: RiskFlag) -> None:
         if edge_id in self.edges:
-            self.edges[edge_id].risk_flags.append(asdict(flag))
+            self._append_unique(self.edges[edge_id].risk_flags, flag)
 
     def to_dict(self) -> dict:
         return {

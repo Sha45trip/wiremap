@@ -295,10 +295,10 @@ class _ModuleVisitor(ast.NodeVisitor):
         f = dec.func
         # FastAPI: @app.get("/x") / @router.post("/y")
         if isinstance(f, ast.Attribute) and f.attr in HTTP_METHODS:
+            if not (dec.args and isinstance(dec.args[0], ast.Constant)):
+                return []   # computed path — never fabricate "/" (bench 4.1)
             owner = getattr(f.value, "id", "")
-            path = ""
-            if dec.args and isinstance(dec.args[0], ast.Constant):
-                path = str(dec.args[0].value)
+            path = str(dec.args[0].value)
             prefix = self.router_prefixes.get(owner, "")
             # response model: bare-Name only — List[X]/Optional[X] are not a
             # CERTAIN field set, and the precision rule says skip those
@@ -317,10 +317,10 @@ class _ModuleVisitor(ast.NodeVisitor):
             )]
         # Flask: @app.route(...) / @bp.route(...), one RouteInfo per method
         if isinstance(f, ast.Attribute) and f.attr == "route":
+            if not (dec.args and isinstance(dec.args[0], ast.Constant)):
+                return []   # e.g. @routes.route(org_scoped_rule("/login"))
             owner = getattr(f.value, "id", "")
-            path = ""
-            if dec.args and isinstance(dec.args[0], ast.Constant):
-                path = str(dec.args[0].value)
+            path = str(dec.args[0].value)
             methods = ["GET"]
             for kw in dec.keywords:
                 if kw.arg == "methods" and isinstance(kw.value, (ast.List, ast.Tuple)):
@@ -426,7 +426,10 @@ def _parse_source(source: str, rel: str) -> dict:
     try:
         tree = ast.parse(source)
     except SyntaxError:
-        return {"routes": [], "functions": {}, "models": []}
+        # same shape as a successful parse — downstream indexes these keys
+        return {"routes": [], "functions": {}, "models": [],
+                "pydantic_models": {}, "module": _module_of(rel)[0],
+                "imports": {}, "url_entries": [], "drf": []}
     v = _ModuleVisitor(rel, rel)
     v.visit(tree)
     return {
@@ -566,9 +569,14 @@ def extract_backend(root: str, graph: Graph,
             if not fn.endswith(".py"):
                 continue
             full = os.path.join(dirpath, fn)
-            rel = os.path.relpath(full, root)
-            with open(full, "rb") as f:
-                raw = f.read()
+            # forward slashes everywhere: rel feeds node ids, evidence
+            # strings, and cache keys, which must match across OSes
+            rel = os.path.relpath(full, root).replace(os.sep, "/")
+            try:
+                with open(full, "rb") as f:
+                    raw = f.read()
+            except OSError:
+                continue    # unreadable (permissions, >MAX_PATH on Windows)
             seen_files.add(rel)
             sha = content_hash(raw)
             data = cache.get("backend", rel, sha) if cache else None

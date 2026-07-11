@@ -2,5 +2,6 @@ wiremap.egg-info/
 __pycache__/
 .pytest_cache/
 .wiremap/
+bench/.corpus/
 CLAUDE.md
 ROADMAP.md

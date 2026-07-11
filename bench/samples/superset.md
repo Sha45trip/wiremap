@@ -1,0 +1,133 @@
+# superset — flag samples for labeling
+
+Verdict legend: TP (real issue), FP (wrong), DEBATABLE (defensible but low-value).
+
+## no_error_handling (20 total, 8 sampled)
+- [ ] `call:packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:390`
+  - evidence: packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:390 `GET <dynamic>`
+  - message: API call has no .catch and is not inside try/catch
+  - verdict: 
+- [ ] `call:src/pages/DatasetList/DatasetList.listview.test.tsx:1726`
+  - evidence: src/pages/DatasetList/DatasetList.listview.test.tsx:1726 `GET <dynamic>`
+  - message: API call has no .catch and is not inside try/catch
+  - verdict: 
+- [ ] `call:packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:509`
+  - evidence: packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:509 `POST <dynamic>`
+  - message: API call has no .catch and is not inside try/catch
+  - verdict: 
+- [ ] `call:packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:339`
+  - evidence: packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:339 `DELETE <dynamic>`
+  - message: API call has no .catch and is not inside try/catch
+  - verdict: 
+- [ ] `call:packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:541`
+  - evidence: packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:541 `POST <dynamic>`
+  - message: API call has no .catch and is not inside try/catch
+  - verdict: 
+- [ ] `call:packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:445`
+  - evidence: packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:445 `GET <dynamic>`
+  - message: API call has no .catch and is not inside try/catch
+  - verdict: 
+- [ ] `call:packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:469`
+  - evidence: packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:469 `POST <dynamic>`
+  - message: API call has no .catch and is not inside try/catch
+  - verdict: 
+- [ ] `call:packages/superset-ui-core/src/query/api/legacy/getDatasourceMetadata.ts:33`
+  - evidence: packages/superset-ui-core/src/query/api/legacy/getDatasourceMetadata.ts:33 `GET <dynamic>`
+  - message: API call has no .catch and is not inside try/catch
+  - verdict: 
+
+## no_timeout (23 total, 8 sampled)
+- [ ] `call:packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:338`
+  - evidence: packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:338 `PUT <dynamic>`
+  - message: API call has no timeout/abort signal
+  - verdict: 
+- [ ] `call:src/components/StreamingExportModal/useStreamingExport.ts:232`
+  - evidence: src/components/StreamingExportModal/useStreamingExport.ts:232 `GET <dynamic>`
+  - message: API call has no timeout/abort signal
+  - verdict: 
+- [ ] `call:packages/superset-ui-core/src/components/ListViewCard/ImageLoader.tsx:60`
+  - evidence: packages/superset-ui-core/src/components/ListViewCard/ImageLoader.tsx:60 `GET <dynamic>`
+  - message: API call has no timeout/abort signal
+  - verdict: 
+- [ ] `call:src/theme/ThemeController.ts:1132`
+  - evidence: src/theme/ThemeController.ts:1132 `GET /api/v1/theme/?q=(filters:!((col:theme_name,opr:eq,value:THEME_DEFAULT),(col:is_system,opr:eq,value:!t)))`
+  - message: API call has no timeout/abort signal
+  - verdict: 
+- [ ] `call:packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:337`
+  - evidence: packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:337 `POST <dynamic>`
+  - message: API call has no timeout/abort signal
+  - verdict: 
+- [ ] `call:src/theme/ThemeController.ts:1102`
+  - evidence: src/theme/ThemeController.ts:1102 `GET /api/v1/theme/?q=(filters:!((col:is_system_default,opr:eq,value:!t)))`
+  - message: API call has no timeout/abort signal
+  - verdict: 
+- [ ] `call:packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:445`
+  - evidence: packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:445 `GET <dynamic>`
+  - message: API call has no timeout/abort signal
+  - verdict: 
+- [ ] `call:packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:418`
+  - evidence: packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:418 `GET <dynamic>`
+  - message: API call has no timeout/abort signal
+  - verdict: 
+
+## orphan_call (2 total, 2 sampled)
+- [ ] `call:src/theme/ThemeController.ts:1102`
+  - evidence: src/theme/ThemeController.ts:1102
+  - message: Frontend calls GET /api/v1/theme/?q=(filters:!((col:is_system_default,opr:eq,value:!t))) but no backend route matches
+  - verdict: 
+- [ ] `call:src/theme/ThemeController.ts:1132`
+  - evidence: src/theme/ThemeController.ts:1132
+  - message: Frontend calls GET /api/v1/theme/?q=(filters:!((col:theme_name,opr:eq,value:THEME_DEFAULT),(col:is_system,opr:eq,value:!t))) but no backend route matches
+  - verdict: 
+
+## unresolvable_url (23 total, 8 sampled)
+- [ ] `call:packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:509`
+  - evidence: packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:509
+  - message: URL is fully dynamic; wire could not be traced statically
+  - verdict: 
+- [ ] `call:packages/superset-ui-core/src/components/ListViewCard/ImageLoader.tsx:60`
+  - evidence: packages/superset-ui-core/src/components/ListViewCard/ImageLoader.tsx:60
+  - message: URL is fully dynamic; wire could not be traced statically
+  - verdict: 
+- [ ] `call:plugins/legacy-plugin-chart-country-map/src/stories/CountryMap.stories.tsx:69`
+  - evidence: plugins/legacy-plugin-chart-country-map/src/stories/CountryMap.stories.tsx:69
+  - message: URL is fully dynamic; wire could not be traced statically
+  - verdict: 
+- [ ] `call:packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:466`
+  - evidence: packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:466
+  - message: URL is fully dynamic; wire could not be traced statically
+  - verdict: 
+- [ ] `call:packages/superset-ui-core/src/query/api/legacy/getDatasourceMetadata.ts:33`
+  - evidence: packages/superset-ui-core/src/query/api/legacy/getDatasourceMetadata.ts:33
+  - message: URL is fully dynamic; wire could not be traced statically
+  - verdict: 
+- [ ] `call:packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:407`
+  - evidence: packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:407
+  - message: URL is fully dynamic; wire could not be traced statically
+  - verdict: 
+- [ ] `call:packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:541`
+  - evidence: packages/superset-ui-core/test/connection/SupersetClientClass.test.ts:541
+  - message: URL is fully dynamic; wire could not be traced statically
+  - verdict: 
+- [ ] `call:src/components/StreamingExportModal/useStreamingExport.ts:232`
+  - evidence: src/components/StreamingExportModal/useStreamingExport.ts:232
+  - message: URL is fully dynamic; wire could not be traced statically
+  - verdict: 
+
+## unused_endpoint (4 total, 4 sampled)
+- [ ] `ep:GET /ping`
+  - evidence: views/health.py:30
+  - message: No frontend call site references this endpoint
+  - verdict: 
+- [ ] `ep:GET /version`
+  - evidence: views/health.py:38
+  - message: No frontend call site references this endpoint
+  - verdict: 
+- [ ] `ep:GET /healthcheck`
+  - evidence: views/health.py:30
+  - message: No frontend call site references this endpoint
+  - verdict: 
+- [ ] `ep:GET /health`
+  - evidence: views/health.py:30
+  - message: No frontend call site references this endpoint
+  - verdict: 
