@@ -19,6 +19,7 @@ import re
 from dataclasses import dataclass, field, asdict
 
 from ..cache import FileCache, content_hash
+from ..gql import camel
 from ..graph import Graph, Node, Edge, NodeType, EdgeType, Confidence, RiskFlag
 
 HTTP_METHODS = {"get", "post", "put", "delete", "patch", "head", "options"}
@@ -141,8 +142,10 @@ class _ModuleVisitor(ast.NodeVisitor):
         self.pydantic_models: dict[str, dict] = {}  # name -> {fields, bases}
         self.url_entries: list[dict] = []           # django urlpatterns items
         self.drf_registrations: list[dict] = []     # router.register(...) calls
+        self.gql_resolvers: list[dict] = []         # strawberry/graphene roots
         self._class_stack: list[str] = []
         self._class_auth: list[bool] = []
+        self._gql_kind: list[str | None] = []       # QUERY/MUTATION context
 
     def visit_Import(self, node: ast.Import):
         for alias in node.names:
@@ -252,10 +255,20 @@ class _ModuleVisitor(ast.NodeVisitor):
         cls_text = " ".join(bases + [ast.unparse(d) for d in
                                      node.decorator_list]).lower()
         self._class_auth.append(any(h in cls_text for h in AUTH_HINTS))
+        # graphql root types: @strawberry.type class Query / Mutation, or
+        # graphene class Query(ObjectType)
+        gql_kind = None
+        if node.name in ("Query", "Mutation"):
+            if any("strawberry.type" in ast.unparse(d)
+                   for d in node.decorator_list) \
+                    or "ObjectType" in bases:
+                gql_kind = node.name.upper()
+        self._gql_kind.append(gql_kind)
         self._class_stack.append(node.name)
         self.generic_visit(node)
         self._class_stack.pop()
         self._class_auth.pop()
+        self._gql_kind.pop()
 
     def visit_FunctionDef(self, node):
         self._handle_function(node)
@@ -282,7 +295,22 @@ class _ModuleVisitor(ast.NodeVisitor):
         dec_text = " ".join(ast.unparse(d) for d in node.decorator_list).lower()
         info.auth_hint = (any(h in dec_text for h in AUTH_HINTS)
                           or any(self._class_auth))
-        self.functions[f"{self.module}.{qname}" if self.module else qname] = info
+        fqn = f"{self.module}.{qname}" if self.module else qname
+        self.functions[fqn] = info
+
+        # graphql resolvers inside a root type
+        kind = self._gql_kind[-1] if self._gql_kind else None
+        if kind:
+            field = None
+            if node.name.startswith("resolve_"):                 # graphene
+                field = camel(node.name[len("resolve_"):])
+            elif any("strawberry.field" in ast.unparse(d)
+                     for d in node.decorator_list):              # strawberry
+                field = camel(node.name)
+            if field:
+                self.gql_resolvers.append(
+                    {"kind": kind, "field": field, "handler": fqn,
+                     "line": node.lineno})
 
         # route decorators
         for dec in node.decorator_list:
@@ -441,6 +469,7 @@ def _parse_source(source: str, rel: str) -> dict:
         "imports": v.imports,
         "url_entries": v.url_entries,
         "drf": v.drf_registrations,
+        "gql": v.gql_resolvers,
     }
 
 
@@ -559,6 +588,7 @@ def extract_backend(root: str, graph: Graph,
     all_imports: dict[str, dict] = {}       # module -> {local name: fqn}
     all_url_entries: dict[str, list] = {}   # module -> django urlpatterns
     all_drf: dict[str, list] = {}           # module -> DRF registrations
+    all_gql: list[dict] = []                # strawberry/graphene root fields
     files_parsed = files_cached = 0
     seen_files: set[str] = set()
 
@@ -597,12 +627,24 @@ def extract_backend(root: str, graph: Graph,
                 all_url_entries[data["module"]] = data["url_entries"]
             if data.get("drf"):
                 all_drf[data["module"]] = data["drf"]
+            all_gql.extend(data.get("gql", []))
 
     if cache:
         cache.prune("backend", seen_files)
 
     all_routes.extend(_django_routes(all_url_entries, all_drf,
                                      all_imports, all_functions))
+
+    # graphql resolvers -> pseudo-path routes; the standard endpoint loop
+    # then gives them static flags and call-graph walking for free
+    for res in all_gql:
+        info = all_functions.get(res["handler"])
+        all_routes.append(RouteInfo(
+            method=res["kind"], path=f"/graphql#{res['field']}",
+            handler=res["handler"],
+            file=info.file if info else "", line=res["line"],
+            framework="graphql",
+            has_auth_dep=info.auth_hint if info else False))
 
     # --- nodes: ORM models ---
     for mname, mfile, mline in all_models:

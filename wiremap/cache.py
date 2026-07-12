@@ -13,8 +13,8 @@ import hashlib
 import json
 import os
 
-CACHE_VERSION = 4   # v4: django url entries/DRF registrations, fn method+auth
-                    #     hints, react-query + client-op frontend records
+CACHE_VERSION = 5   # v5: graphql resolver records (backend) and gql
+                    #     tagged-template records (frontend)
 
 
 def content_hash(data: bytes) -> str:

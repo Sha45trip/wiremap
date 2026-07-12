@@ -15,6 +15,7 @@ import tree_sitter_typescript as tsts
 from tree_sitter import Language, Parser
 
 from ..cache import FileCache, content_hash
+from ..gql import parse_document
 from ..graph import Graph, Node, Edge, NodeType, EdgeType, Confidence, RiskFlag
 
 JS_LANG = Language(tsjs.language())
@@ -405,6 +406,37 @@ def extract_frontend(root: str, graph: Graph,
             "files_parsed": files_parsed, "files_cached": files_cached}
 
 
+def _gql_records(node, src: bytes) -> list[dict]:
+    """gql`query { user { ... } }` -> one record per selected root field.
+    Apollo/urql own error handling and timeouts, so neither flag applies."""
+    tag = node.named_children[0] if node.named_child_count else None
+    if tag is None or tag.type != "identifier" \
+            or _text(tag, src) not in ("gql", "graphql"):
+        return []
+    template = node.named_children[node.named_child_count - 1]
+    if template.type != "template_string":
+        return []
+    doc = re.sub(r"\$\{[^}]*\}", " ", _text(template, src).strip("`"))
+    parsed = parse_document(doc)
+    if parsed is None:
+        return []
+    kind, fields = parsed
+
+    comp_name, comp_line = _enclosing_component(node, src)
+    decl = node.parent
+    if decl is not None and decl.type == "variable_declarator":
+        nm = decl.child_by_field_name("name")
+        if nm is not None and nm.type == "identifier":
+            comp_name = _text(nm, src)
+            comp_line = decl.start_point[0] + 1
+    line = node.start_point[0] + 1
+    return [{"method": kind, "url": f"/graphql#{f}", "confidence": "certain",
+             "component": comp_name, "component_line": comp_line,
+             "line": line, "has_error_handling": True, "has_timeout": True,
+             "graphql": True, "expected_fields": []}
+            for f in fields]
+
+
 def _parse_source(src: bytes, rel: str, lang) -> list[dict]:
     """Parse one file into JSON-serializable call records (cacheable)."""
     parser = Parser(lang)
@@ -414,7 +446,16 @@ def _parse_source(src: bytes, rel: str, lang) -> list[dict]:
     while stack:
         node = stack.pop()
         stack.extend(node.children)
+        if node.type == "tagged_template_expression":
+            records.extend(_gql_records(node, src))
+            continue
         if node.type != "call_expression":
+            continue
+        # some grammar versions parse gql`...` as a call_expression whose
+        # last named child is the template_string
+        gql_recs = _gql_records(node, src)
+        if gql_recs:
+            records.extend(gql_recs)
             continue
         fn = node.child_by_field_name("function")
         if fn is None:
@@ -517,6 +558,8 @@ def _assemble(records: list[dict], rel: str, graph: Graph,
             meta["operation_id"] = rec["op"]
         if rec.get("react_query"):
             meta["react_query"] = True
+        if rec.get("graphql"):
+            meta["graphql"] = True
         if rec.get("expected_fields"):
             meta["expected_fields"] = rec["expected_fields"]
             meta["fields_confidence"] = "inferred"

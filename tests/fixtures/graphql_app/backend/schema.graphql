@@ -1,0 +1,24 @@
+# SDL is the CERTAIN source; resolver-discovered fields win on collision
+type Query {
+  user(id: ID!): User
+  orders: [Order!]!
+  unusedReport: Report
+}
+
+type Mutation {
+  createOrder(input: OrderInput!): Order
+}
+
+type User {
+  id: ID!
+  name: String!
+}
+
+type Order {
+  id: ID!
+  total: Float!
+}
+
+type Report {
+  rows: [String!]!
+}

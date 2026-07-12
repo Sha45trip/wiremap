@@ -21,6 +21,7 @@ from .coverage import apply_coverage, load_coverage
 from .diff import SEVERITY_ORDER, run_diff
 from .graph import Graph
 from .extractors.express_backend import extract_express
+from .gql import ingest_sdl
 from .extractors.python_backend import extract_backend
 from .extractors.react_frontend import extract_frontend
 from .matcher import match
@@ -76,6 +77,8 @@ def perform_scan(project_root: str, backend: str | None = None,
     b_stats["files_parsed"] += e_stats["files_parsed"]
     b_stats["files_cached"] += e_stats["files_cached"]
 
+    g_stats = ingest_sdl(b_dir, graph)   # fills gaps; resolver-found wins
+
     oa_stats = client_ops = None
     found = load_openapi(root, b_dir)
     if found:
@@ -112,6 +115,7 @@ def perform_scan(project_root: str, backend: str | None = None,
     return {"backend": b_dir, "frontend": f_dir, "out_dir": out_dir,
             "graph_path": graph_path, "viewer_path": viewer_path,
             "b": b_stats, "f": f_stats, "m": m_stats, "oa": oa_stats,
+            "gql": g_stats if g_stats["root_fields"] else None,
             "cov": cov_stats, "rt": rt_stats, "r": r_stats}
 
 
@@ -139,6 +143,7 @@ def scan(args) -> int:
 
   files parsed      {parsed}  ({cache_note})
   routes found      {b_stats['routes']}{f'''
+  graphql schema    {res['gql']['root_fields']} root fields (SDL)''' if res['gql'] else ''}{f'''
   openapi ingested  {res['oa']['endpoints']} spec endpoints''' if res['oa'] else ''}
   api call sites    {f_stats['api_calls']}
   wires matched     {m_stats['matched']}

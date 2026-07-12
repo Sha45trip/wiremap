@@ -126,6 +126,10 @@ untested endpoint handlers are flagged.
 - OpenAPI: an `openapi.json` in the repo is ingested as the endpoint source
   of truth; generated-client calls (`api.getPetById(...)`) match by
   operationId
+- GraphQL: root fields become endpoints (`QUERY user`) from SDL files
+  and/or Strawberry/Graphene resolver classes (with call-graph + static
+  flags on resolvers); client `gql` documents wire to them — undeclared
+  selections are orphans, unqueried fields are unused
 - React call sites: `fetch()`, `axios.get/post/put/delete/patch`, generic
   `api.*`/`client.*` wrappers, with template-literal URL resolution;
   calls inside React Query hooks (`useQuery`/`useMutation`) are recognized
