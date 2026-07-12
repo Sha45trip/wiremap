@@ -2,9 +2,21 @@ from typing import List
 
 from fastapi import APIRouter
 
-from .schemas import ItemOut
+from .schemas import ItemOut, ItemCreate
 
 capi = APIRouter(prefix="/contract")
+
+
+@capi.post("/create")
+def create_item(body: ItemCreate):
+    # request model -> CERTAIN request field set (name, price required)
+    return body
+
+
+@capi.put("/update/{item_id}")
+def update_item(item_id: int, body: ItemCreate):
+    # path param + body model: request model must still be found
+    return body
 
 
 @capi.get("/item")

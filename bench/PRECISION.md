@@ -79,6 +79,14 @@ pattern is present. True-positive firing is proven on fixtures
 precision-first launch; widen the corpus with a known-vulnerable app to
 confirm recall.
 
+## 6.2 request-body contract — precision check (2026-07-11)
+
+fastapi-template: 1 endpoint with a detected request model, 0 request-
+contract flags (its frontend calls a generated client, so no raw axios
+bodies to compare — correctly silent). Firing proven on fixtures
+(tests/test_request_contract.py). Same conservative posture as 2.4:
+CERTAIN backend model + complete (spread-free) frontend body only.
+
 ## Numbers after fixes (re-run)
 
 See RESULTS.md — regenerated after the fixes above; the redash route

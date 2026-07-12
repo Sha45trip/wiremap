@@ -153,6 +153,8 @@ untested endpoint handlers are flagged.
 |---|---|---|
 | `hot_fragile` | operational | top-decile traffic on an endpoint with high/critical static flags |
 | `contract_mismatch` | contract | frontend reads (or declares via TS generics) a field the response model doesn't declare |
+| `request_contract_mismatch` | contract | frontend sends a body field the request model doesn't accept (silently dropped) |
+| `missing_request_field` | contract | frontend omits a required request-model field (422 at runtime) |
 | `orphan_call` | contract | frontend calls a route that doesn't exist — will 404 |
 | `unused_endpoint` | contract | no frontend caller — dead code or external consumer |
 | `confirmed_dead` | contract | statically unreferenced AND zero traffic in window |

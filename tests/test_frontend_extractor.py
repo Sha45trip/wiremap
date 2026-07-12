@@ -19,7 +19,7 @@ def flags(node: Node) -> set[str]:
 
 class TestCallDiscovery:
     def test_all_call_sites_found(self, frontend_graph):
-        assert len(frontend_graph.nodes_of(NodeType.API_CALL)) == 17
+        assert len(frontend_graph.nodes_of(NodeType.API_CALL)) == 22
 
     def test_calls_linked_to_enclosing_function(self, frontend_graph):
         call = find_call(frontend_graph, "GET", "/widgets")

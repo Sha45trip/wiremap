@@ -81,6 +81,42 @@ def match(graph: Graph) -> dict:
                                    "stop reading it — it is undefined at "
                                    "runtime",
                     ))
+            # request-body contract (6.2): backend request model is CERTAIN,
+            # frontend body object is exact only when complete (no spread)
+            req_fields = ep.meta.get("request_fields")
+            sent = call.meta.get("sent_fields")
+            if req_fields is not None and sent is not None \
+                    and call.meta.get("sent_complete"):
+                extra = sorted(set(sent) - set(req_fields))
+                if extra:
+                    graph.flag_node(call.id, RiskFlag(
+                        code="request_contract_mismatch", severity="high",
+                        category="contract",
+                        message=f"Frontend sends {', '.join(extra)} — not "
+                                "accepted by request model "
+                                f"{ep.meta.get('request_model', '?')}; "
+                                "silently dropped",
+                        evidence=f"{call.file}:{call.line} sends "
+                                 f"{', '.join(sent)}; {ep.file}:{ep.line} "
+                                 f"accepts {', '.join(req_fields)}",
+                        suggestion="Add the field to the request model or "
+                                   "stop sending it — the backend ignores it",
+                    ))
+                missing = sorted(set(ep.meta.get("request_required", []))
+                                 - set(sent))
+                if missing:
+                    graph.flag_node(call.id, RiskFlag(
+                        code="missing_request_field", severity="high",
+                        category="contract",
+                        message=f"Frontend omits required {', '.join(missing)}"
+                                f" for {ep.meta.get('request_model', '?')} — "
+                                "request will 422",
+                        evidence=f"{call.file}:{call.line} sends "
+                                 f"{', '.join(sent) or '(none)'}; required: "
+                                 f"{', '.join(ep.meta['request_required'])}",
+                        suggestion="Include the required field in the request "
+                                   "body",
+                    ))
         else:
             orphan_calls += 1
             graph.flag_node(call.id, RiskFlag(

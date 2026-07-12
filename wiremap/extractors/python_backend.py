@@ -48,6 +48,7 @@ class RouteInfo:
     has_auth_dep: bool = False
     router_prefix: str = ""
     response_model: str = ""   # bare Name from response_model= or -> annotation
+    request_model: str = ""    # bare Name from a body-param annotation (6.2)
 
 
 @dataclass
@@ -252,9 +253,21 @@ class _ModuleVisitor(ast.NodeVisitor):
         if any(b in ("Base", "Model", "DeclarativeBase") for b in bases):
             self.orm_models.append((node.name, node.lineno))
         if "BaseModel" in bases or any(b in self.pydantic_models for b in bases):
-            fields = [s.target.id for s in node.body
-                      if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)]
-            self.pydantic_models[node.name] = {"fields": fields, "bases": bases}
+            fields, required = [], []
+            for s in node.body:
+                if not (isinstance(s, ast.AnnAssign)
+                        and isinstance(s.target, ast.Name)):
+                    continue
+                fields.append(s.target.id)
+                # required = no default value and not Optional/X|None (6.2)
+                ann = ast.unparse(s.annotation)
+                is_optional = (s.value is not None
+                               or ann.startswith("Optional[")
+                               or "None" in ann.split("|"))
+                if not is_optional:
+                    required.append(s.target.id)
+            self.pydantic_models[node.name] = {"fields": fields, "bases": bases,
+                                               "required": required}
         cls_text = " ".join(bases + [ast.unparse(d) for d in
                                      node.decorator_list]).lower()
         self._class_auth.append(any(h in cls_text for h in AUTH_HINTS))
@@ -351,6 +364,7 @@ class _ModuleVisitor(ast.NodeVisitor):
                 file=self.rel, line=fn_node.lineno, framework="fastapi",
                 has_auth_dep=self._has_auth_dependency(fn_node),
                 router_prefix=prefix, response_model=response_model,
+                request_model=self._request_model(fn_node),
             )]
         # Flask: @app.route(...) / @bp.route(...), one RouteInfo per method
         if isinstance(f, ast.Attribute) and f.attr == "route":
@@ -370,6 +384,24 @@ class _ModuleVisitor(ast.NodeVisitor):
                 router_prefix=self.router_prefixes.get(owner, ""),
             ) for m in methods]
         return []
+
+    _NON_BODY_ANNOT = {"int", "str", "float", "bool", "bytes", "dict", "list",
+                       "tuple", "set", "UUID", "date", "datetime", "Decimal",
+                       "Request", "BackgroundTasks", "Response"}
+
+    @classmethod
+    def _request_model(cls, fn_node) -> str:
+        """First body-param annotation that's a bare Name and not a
+        primitive/framework type — resolved against the Pydantic model set
+        at assembly (so a non-model guess simply yields no request_fields)."""
+        args = fn_node.args
+        for a in list(args.posonlyargs) + list(args.args) + list(args.kwonlyargs):
+            if a.arg in ("self", "cls"):
+                continue
+            if isinstance(a.annotation, ast.Name) \
+                    and a.annotation.id not in cls._NON_BODY_ANNOT:
+                return a.annotation.id
+        return ""
 
     @staticmethod
     def _has_auth_dependency(fn_node) -> bool:
@@ -681,6 +713,20 @@ def _resolve_model_fields(name: str, models: dict[str, dict],
     return fields
 
 
+def _resolve_required_fields(name: str, models: dict[str, dict],
+                             seen: frozenset = frozenset()) -> list[str]:
+    """Required (no-default, non-Optional) fields, own + inherited."""
+    if name not in models or name in seen:
+        return []
+    info = models[name]
+    req = list(info.get("required", []))
+    for base in info["bases"]:
+        for f in _resolve_required_fields(base, models, seen | {name}):
+            if f not in req:
+                req.append(f)
+    return req
+
+
 def extract_backend(root: str, graph: Graph,
                     cache: FileCache | None = None) -> dict:
     """Scan a Python source tree, populate graph, return summary stats."""
@@ -768,6 +814,12 @@ def extract_backend(root: str, graph: Graph,
             meta["response_model"] = r.response_model
             meta["response_fields"] = sorted(
                 _resolve_model_fields(r.response_model, all_pydantic))
+        if r.request_model and r.request_model in all_pydantic:
+            meta["request_model"] = r.request_model
+            meta["request_fields"] = sorted(
+                _resolve_model_fields(r.request_model, all_pydantic))
+            meta["request_required"] = sorted(
+                _resolve_required_fields(r.request_model, all_pydantic))
         graph.add_node(Node(
             id=ep_id, type=NodeType.ENDPOINT, label=f"{r.method} {full_path}",
             file=r.file, line=r.line, meta=meta,

@@ -142,6 +142,53 @@ def _pattern_keys(pattern_node, src: bytes) -> list[str]:
     return keys
 
 
+def _object_keys(obj_node, src: bytes) -> tuple[list[str], bool]:
+    """Keys of an object literal + whether it's complete (no spread). A
+    spread (`...data`) means we can't know the full field set."""
+    keys, complete = [], True
+    for child in obj_node.named_children:
+        if child.type == "shorthand_property_identifier":
+            keys.append(_text(child, src))
+        elif child.type == "pair":
+            k = child.child_by_field_name("key")
+            if k is not None and k.type in ("property_identifier", "string"):
+                keys.append(_text(k, src).strip("'\"`"))
+        elif child.type == "spread_element":
+            complete = False
+    return keys, complete
+
+
+def _sent_body(call_node, is_axios: bool, src: bytes):
+    """Fields the request body object sends, or None.
+    axios.post(url, {a,b}) -> the 2nd arg; fetch(url,{body:JSON.stringify({..})}).
+    Returns (fields, complete) where complete is False if a spread is present."""
+    args = call_node.child_by_field_name("arguments")
+    if args is None:
+        return None
+    if is_axios:
+        if args.named_child_count >= 2 and args.named_children[1].type == "object":
+            return _object_keys(args.named_children[1], src)
+        return None
+    # fetch: find body: JSON.stringify({...}) in the options object
+    if args.named_child_count < 2 or args.named_children[1].type != "object":
+        return None
+    for pair in args.named_children[1].named_children:
+        if pair.type != "pair":
+            continue
+        k = pair.child_by_field_name("key")
+        v = pair.child_by_field_name("value")
+        if k is None or v is None or _text(k, src) != "body":
+            continue
+        if v.type == "call_expression":
+            vfn = v.child_by_field_name("function")
+            vargs = v.child_by_field_name("arguments")
+            if (vfn is not None and _text(vfn, src) == "JSON.stringify"
+                    and vargs and vargs.named_child_count >= 1
+                    and vargs.named_children[0].type == "object"):
+                return _object_keys(vargs.named_children[0], src)
+    return None
+
+
 def _reads_on(scope, src: bytes, obj_text: str) -> set[str]:
     """Field names read off `obj_text` inside `scope`: member accesses
     (`obj.field`) and destructuring (`const {field} = obj`)."""
@@ -616,6 +663,8 @@ def _parse_source(src: bytes, rel: str, lang) -> dict:
         rtype = _call_type_argument(node, src)
         if rtype is None and rq_hook is not None:
             rtype = _call_type_argument(rq_hook, src)
+        sent = (_sent_body(node, is_axios, src)
+                if method in ("POST", "PUT", "PATCH") else None)
         records.append({
             "method": method, "url": url, "confidence": confidence.value,
             "component": comp_name, "component_line": comp_line,
@@ -626,6 +675,8 @@ def _parse_source(src: bytes, rel: str, lang) -> dict:
             "react_query": rq_hook is not None,
             "response_type": rtype,
             "expected_fields": _expected_fields(node, src, is_axios),
+            "sent_fields": sorted(sent[0]) if sent else None,
+            "sent_complete": sent[1] if sent else False,
         })
     return {"calls": records, "types": types}
 
@@ -680,6 +731,9 @@ def _assemble(records: list[dict], rel: str, graph: Graph,
         elif rec.get("expected_fields"):
             meta["expected_fields"] = rec["expected_fields"]
             meta["fields_confidence"] = "inferred"
+        if rec.get("sent_fields") is not None:
+            meta["sent_fields"] = rec["sent_fields"]
+            meta["sent_complete"] = rec.get("sent_complete", False)
         graph.add_node(Node(
             id=call_id, type=NodeType.API_CALL,
             label=f"{method} {url}", file=rel, line=line, meta=meta,
