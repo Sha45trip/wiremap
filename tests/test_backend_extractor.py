@@ -24,6 +24,7 @@ class TestRouteDiscovery:
             "ep:GET /contract/items", "ep:GET /contract/raw",
             "ep:GET /calc/price", "ep:GET /calc/tax",
             "ep:GET /inv/items", "ep:POST /inv/items",
+            "ep:GET /report", "ep:GET /deep-report", "ep:GET /safe-report",
         }
 
     def test_apirouter_prefix_applied(self, backend_graph):

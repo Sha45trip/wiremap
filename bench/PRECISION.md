@@ -67,6 +67,18 @@ plus one honest sentence about coverage".
 3. **missing_auth on auth-by-context** — a handler that *reads*
    `current_user`/`request.user` is not unauthenticated; suppress.
 
+## 6.1 cross-function SQL taint — precision check (2026-07-11)
+
+Ran the new cross-function `sql_injection_risk` over redash and superset:
+**0 flags on each** — i.e. 0 false positives on ~5k files of real Flask.
+The detector is deliberately conservative (positional args only, resolved
+callees only, ≤2 hops, request-param origins only), so it stays silent
+unless the FastAPI-style "handler param → interpolating service fn"
+pattern is present. True-positive firing is proven on fixtures
+(tests/test_sql_taint.py), not yet on an external repo — acceptable for a
+precision-first launch; widen the corpus with a known-vulnerable app to
+confirm recall.
+
 ## Numbers after fixes (re-run)
 
 See RESULTS.md — regenerated after the fixes above; the redash route

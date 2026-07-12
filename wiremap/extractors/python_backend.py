@@ -65,6 +65,9 @@ class FunctionInfo:
     orm_models: list = field(default_factory=list)
     methods: list = field(default_factory=list)    # from @require_GET etc.
     auth_hint: bool = False                        # decorator/class auth smell
+    params: list = field(default_factory=list)     # ordered param names (6.1)
+    sql_sink_params: list = field(default_factory=list)  # params interpolated
+    forwards: list = field(default_factory=list)   # {callee, arg_params} calls
 
 
 def _module_of(rel: str) -> tuple[str, bool]:
@@ -278,11 +281,15 @@ class _ModuleVisitor(ast.NodeVisitor):
 
     def _handle_function(self, node):
         qname = ".".join(self._class_stack + [node.name]) if self._class_stack else node.name
+        a = node.args
+        params = [p.arg for p in
+                  (list(a.posonlyargs) + list(a.args) + list(a.kwonlyargs))
+                  if p.arg not in ("self", "cls")]
         info = FunctionInfo(
             qname=qname, module=self.module, file=self.rel, line=node.lineno,
-            end_line=getattr(node, "end_lineno", node.lineno),
+            end_line=getattr(node, "end_lineno", node.lineno), params=params,
         )
-        analyzer = _FunctionBodyAnalyzer()
+        analyzer = _FunctionBodyAnalyzer(params)
         for stmt in node.body:
             analyzer.visit(stmt)
         info.calls = analyzer.calls
@@ -291,6 +298,8 @@ class _ModuleVisitor(ast.NodeVisitor):
         info.raw_sql_interp = analyzer.raw_sql
         info.complexity = analyzer.complexity
         info.orm_models = analyzer.orm_models
+        info.sql_sink_params = sorted(analyzer.sink_params)
+        info.forwards = analyzer.forwards
         info.methods = _methods_from_decorators(node.decorator_list)
         dec_text = " ".join(ast.unparse(d) for d in node.decorator_list).lower()
         info.auth_hint = (any(h in dec_text for h in AUTH_HINTS)
@@ -382,8 +391,18 @@ class _ModuleVisitor(ast.NodeVisitor):
         return False
 
 
+def _call_target(f) -> str:
+    """The recorded call string for an ast call func (matches `calls`)."""
+    if isinstance(f, ast.Name):
+        return f.id
+    if isinstance(f, ast.Attribute):
+        return f"{f.value.id}.{f.attr}" if isinstance(f.value, ast.Name) \
+            else f.attr
+    return ""
+
+
 class _FunctionBodyAnalyzer(ast.NodeVisitor):
-    def __init__(self):
+    def __init__(self, params: list[str] | None = None):
         self.calls: list[str] = []
         self.has_try = False
         self._try_depth = 0
@@ -391,6 +410,45 @@ class _FunctionBodyAnalyzer(ast.NodeVisitor):
         self.raw_sql: list[tuple[int, str]] = []
         self.complexity = 1
         self.orm_models: list[str] = []
+        # taint (6.1): local var -> the param it derives from
+        self.alias: dict[str, str] = {p: p for p in (params or [])}
+        self.sink_params: set[str] = set()
+        self.forwards: list[dict] = []
+
+    def _origin(self, node) -> str | None:
+        """The param a value derives from: Name, or Subscript/Attribute of a
+        tainted base (`payload`, `payload['id']`, `payload.id`)."""
+        if isinstance(node, ast.Name):
+            return self.alias.get(node.id)
+        if isinstance(node, (ast.Subscript, ast.Attribute)):
+            return self._origin(node.value)
+        return None
+
+    def _record_assign(self, target, value):
+        if not isinstance(target, ast.Name):
+            return
+        origin = self._origin(value)
+        if origin:
+            self.alias[target.id] = origin
+        else:
+            self.alias.pop(target.id, None)   # reassigned to untainted
+
+    def visit_Assign(self, node):
+        for t in node.targets:
+            self._record_assign(t, node.value)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node):
+        if node.value is not None:
+            self._record_assign(node.target, node.value)
+        self.generic_visit(node)
+
+    def _tainted_names_in(self, node) -> set[str]:
+        out = set()
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Name) and sub.id in self.alias:
+                out.add(self.alias[sub.id])
+        return out
 
     def visit_Try(self, node):
         self.has_try = True
@@ -446,6 +504,15 @@ class _FunctionBodyAnalyzer(ast.NodeVisitor):
             if isinstance(a, ast.JoinedStr) or isinstance(a, ast.BinOp):
                 snippet = ast.unparse(a)[:80]
                 self.raw_sql.append((node.lineno, snippet))
+                # taint: which of our params flow into this interpolation
+                self.sink_params.update(self._tainted_names_in(a))
+        # forwards (6.1): tainted args passed to a project function
+        target = _call_target(f)
+        if target:
+            arg_params = [self._origin(arg) for arg in node.args]
+            if any(arg_params):
+                self.forwards.append({"callee": target,
+                                      "arg_params": arg_params})
         self.generic_visit(node)
 
 
@@ -562,6 +629,42 @@ def _resolve_callee(callee: str, info: FunctionInfo, imports: dict[str, str],
         return fqn if fqn in functions else None
     cand = f"{module}.{callee}" if module else callee
     return cand if cand in functions else None
+
+
+def _sql_taint(fqn: str, functions: dict[str, FunctionInfo],
+               all_imports: dict[str, dict], depth: int = 2,
+               seen: frozenset = frozenset()):
+    """Does a parameter of `fqn` reach a raw-SQL interpolation within
+    `depth` call hops? Returns (param, witness_fqn, witness_line) or None.
+
+    Uses the module-qualified call graph (3.4): a param is tainted if it is
+    interpolated directly, or forwarded into a callee argument position that
+    is itself a taint sink. Precision-first — positional args only, resolved
+    callees only; nothing is guessed."""
+    info = functions.get(fqn)
+    if info is None or fqn in seen or depth < 0:
+        return None
+    if info.sql_sink_params:                       # direct interpolation
+        return (info.sql_sink_params[0], fqn, info.raw_sql_interp[0][0])
+    if depth == 0:
+        return None
+    seen = seen | {fqn}
+    imports = all_imports.get(info.module, {})
+    for fwd in info.forwards:
+        target = _resolve_callee(fwd["callee"], info, imports, functions)
+        if not target:
+            continue
+        sub = _sql_taint(target, functions, all_imports, depth - 1, seen)
+        if sub is None:
+            continue
+        sink_param, wfqn, wline = sub
+        try:
+            idx = functions[target].params.index(sink_param)
+        except ValueError:
+            continue
+        if idx < len(fwd["arg_params"]) and fwd["arg_params"][idx]:
+            return (fwd["arg_params"][idx], wfqn, wline)
+    return None
 
 
 def _resolve_model_fields(name: str, models: dict[str, dict],
@@ -695,6 +798,22 @@ def extract_backend(root: str, graph: Graph,
                     message="Raw SQL built with string interpolation",
                     evidence=f"{info.file}:{line} `{snippet}`",
                     suggestion="Use parameterized queries or the ORM",
+                ))
+            # cross-function taint (6.1): request param flows into SQL built
+            # in another function, up to 2 hops through the qualified graph
+            taint = _sql_taint(r.handler, all_functions, all_imports)
+            if taint and taint[1] != r.handler:
+                param, wfqn, wline = taint
+                wfile = all_functions[wfqn].file
+                graph.flag_node(ep_id, RiskFlag(
+                    code="sql_injection_risk", severity="critical",
+                    category="security",
+                    message="Request data flows into raw SQL built in "
+                            f"`{wfqn}`",
+                    evidence=f"{r.file}:{r.line} passes `{param}` -> "
+                             f"{wfile}:{wline} string-interpolated execute()",
+                    suggestion="Parameterize the query in the downstream "
+                               "function, or validate/escape before passing",
                 ))
         mutating = r.method in ("POST", "PUT", "DELETE", "PATCH")
         if mutating and not r.has_auth_dep:
