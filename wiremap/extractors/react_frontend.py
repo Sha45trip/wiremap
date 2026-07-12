@@ -406,6 +406,49 @@ def extract_frontend(root: str, graph: Graph,
             "files_parsed": files_parsed, "files_cached": files_cached}
 
 
+_TRPC_HOOKS = {"useQuery": "QUERY", "useMutation": "MUTATION",
+               "useInfiniteQuery": "QUERY", "useSuspenseQuery": "QUERY",
+               "query": "QUERY", "mutate": "MUTATION", "fetch": "QUERY"}
+
+
+def _trpc_call_record(call_node, fn, src: bytes) -> dict | None:
+    """`trpc.user.byId.useQuery()` -> a tRPC wire record, or None.
+
+    The chain must start at a `trpc`/`api` root and end at a known hook;
+    the dotted procedure path between them keys the endpoint
+    (/trpc#user.byId). Method comes from the hook (query vs mutation)."""
+    if fn is None or fn.type != "member_expression":
+        return None
+    prop = fn.child_by_field_name("property")
+    if prop is None or prop.type != "property_identifier":
+        return None
+    hook = _text(prop, src)
+    verb = _TRPC_HOOKS.get(hook)
+    if verb is None:
+        return None
+    # collect the dotted segments walking down the object chain
+    segs: list[str] = []
+    cur = fn.child_by_field_name("object")
+    while cur is not None and cur.type == "member_expression":
+        p = cur.child_by_field_name("property")
+        if p is None:
+            return None
+        segs.append(_text(p, src))
+        cur = cur.child_by_field_name("object")
+    if cur is None or cur.type != "identifier":
+        return None
+    root = _text(cur, src)
+    if not re.match(r"^(trpc|api|client)$", root, re.I) or not segs:
+        return None
+    path = ".".join(reversed(segs))
+    comp_name, comp_line = _enclosing_component(call_node, src)
+    return {"method": verb, "url": f"/trpc#{path}", "confidence": "certain",
+            "component": comp_name, "component_line": comp_line,
+            "line": call_node.start_point[0] + 1,
+            "has_error_handling": True, "has_timeout": True,
+            "trpc": True, "expected_fields": []}
+
+
 def _gql_records(node, src: bytes) -> list[dict]:
     """gql`query { user { ... } }` -> one record per selected root field.
     Apollo/urql own error handling and timeouts, so neither flag applies."""
@@ -466,6 +509,12 @@ def _parse_source(src: bytes, rel: str, lang) -> list[dict]:
         method = None
         url_node = None
         is_axios = False
+
+        # tRPC client: trpc.user.byId.useQuery() / .useMutation() / .query()
+        trpc_rec = _trpc_call_record(node, fn, src)
+        if trpc_rec:
+            records.append(trpc_rec)
+            continue
 
         if fn_text == "fetch" and args and args.named_child_count >= 1:
             url_node = args.named_children[0]
@@ -560,6 +609,8 @@ def _assemble(records: list[dict], rel: str, graph: Graph,
             meta["react_query"] = True
         if rec.get("graphql"):
             meta["graphql"] = True
+        if rec.get("trpc"):
+            meta["trpc"] = True
         if rec.get("expected_fields"):
             meta["expected_fields"] = rec["expected_fields"]
             meta["fields_confidence"] = "inferred"

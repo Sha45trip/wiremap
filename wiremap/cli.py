@@ -21,6 +21,7 @@ from .coverage import apply_coverage, load_coverage
 from .diff import SEVERITY_ORDER, run_diff
 from .graph import Graph
 from .extractors.express_backend import extract_express
+from .extractors.nextjs_backend import extract_nextjs
 from .gql import ingest_sdl
 from .extractors.python_backend import extract_backend
 from .extractors.react_frontend import extract_frontend
@@ -79,6 +80,17 @@ def perform_scan(project_root: str, backend: str | None = None,
 
     g_stats = ingest_sdl(b_dir, graph)   # fills gaps; resolver-found wins
 
+    # Next.js/tRPC routes live in the frontend tree (and sometimes backend);
+    # scan both, de-dupe by node id
+    nx_stats = extract_nextjs(f_dir, graph, cache)
+    if os.path.abspath(b_dir) != os.path.abspath(f_dir):
+        nx_b = extract_nextjs(b_dir, graph, cache)
+        for k in ("routes", "files_parsed", "files_cached"):
+            nx_stats[k] += nx_b[k]
+    b_stats["routes"] += nx_stats["routes"]
+    b_stats["files_parsed"] += nx_stats["files_parsed"]
+    b_stats["files_cached"] += nx_stats["files_cached"]
+
     oa_stats = client_ops = None
     found = load_openapi(root, b_dir)
     if found:
@@ -115,7 +127,7 @@ def perform_scan(project_root: str, backend: str | None = None,
     return {"backend": b_dir, "frontend": f_dir, "out_dir": out_dir,
             "graph_path": graph_path, "viewer_path": viewer_path,
             "b": b_stats, "f": f_stats, "m": m_stats, "oa": oa_stats,
-            "gql": g_stats if g_stats["root_fields"] else None,
+            "nx": nx_stats, "gql": g_stats if g_stats["root_fields"] else None,
             "cov": cov_stats, "rt": rt_stats, "r": r_stats}
 
 
@@ -143,6 +155,7 @@ def scan(args) -> int:
 
   files parsed      {parsed}  ({cache_note})
   routes found      {b_stats['routes']}{f'''
+  next/trpc routes  {res['nx']['routes']}''' if res['nx'] and res['nx']['routes'] else ''}{f'''
   graphql schema    {res['gql']['root_fields']} root fields (SDL)''' if res['gql'] else ''}{f'''
   openapi ingested  {res['oa']['endpoints']} spec endpoints''' if res['oa'] else ''}
   api call sites    {f_stats['api_calls']}

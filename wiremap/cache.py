@@ -13,8 +13,8 @@ import hashlib
 import json
 import os
 
-CACHE_VERSION = 5   # v5: graphql resolver records (backend) and gql
-                    #     tagged-template records (frontend)
+CACHE_VERSION = 6   # v6: next.js/trpc records (nextjs adapter section) and
+                    #     trpc client-call records (frontend)
 
 
 def content_hash(data: bytes) -> str:

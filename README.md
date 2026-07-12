@@ -130,6 +130,10 @@ untested endpoint handlers are flagged.
   and/or Strawberry/Graphene resolver classes (with call-graph + static
   flags on resolvers); client `gql` documents wire to them — undeclared
   selections are orphans, unqueried fields are unused
+- Next.js: file-convention API routes (`pages/api/**`, app-router
+  `app/api/**/route.ts`, `[id]`/`[...slug]` params); tRPC: router
+  procedures become endpoints and `trpc.user.byId.useQuery()` client
+  calls wire to them by dotted path
 - React call sites: `fetch()`, `axios.get/post/put/delete/patch`, generic
   `api.*`/`client.*` wrappers, with template-literal URL resolution;
   calls inside React Query hooks (`useQuery`/`useMutation`) are recognized
