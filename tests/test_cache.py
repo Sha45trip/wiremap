@@ -23,7 +23,7 @@ from wiremap.risk import DEFAULT_CONFIG, score
 from conftest import BACKEND_FIXTURE, FRONTEND_FIXTURE, DEMO_DIR, normalize
 
 N_BACKEND_FILES = 12  # tests/fixtures/backend_app/app/*.py
-N_FRONTEND_FILES = 4  # tests/fixtures/frontend_app/src/*.jsx
+N_FRONTEND_FILES = 5  # tests/fixtures/frontend_app/src/*
 
 
 @pytest.fixture

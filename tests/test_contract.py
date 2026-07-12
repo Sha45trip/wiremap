@@ -152,16 +152,18 @@ class TestFixturePipeline:
         g.nodes.update(backend_graph.nodes)
         g.nodes.update(frontend_graph.nodes)
         match(g)
-        mismatches = {n.meta["url"]: [f for f in n.risk_flags
-                                      if f["code"] == "contract_mismatch"]
-                      for n in g.nodes_of(NodeType.API_CALL)}
-        flagged = {url for url, fl in mismatches.items() if fl}
-        assert flagged == {"/contract/item", "/contract/item2"}
-        item_flags = mismatches["/contract/item"]
-        assert "missing_field" in item_flags[0]["message"]
-        item2_flags = [f for f in mismatches["/contract/item2"]]
-        assert len(item2_flags) == 1                     # inline near-miss silent
-        assert "phantom" in item2_flags[0]["message"]
+        # aggregate across calls: several call sites share a URL
+        mismatches: dict = {}
+        for n in g.nodes_of(NodeType.API_CALL):
+            for f in n.risk_flags:
+                if f["code"] == "contract_mismatch":
+                    mismatches.setdefault(n.meta["url"], []).append(f)
+        assert set(mismatches) == {"/contract/item", "/contract/item2"}
+        assert any("missing_field" in f["message"]
+                   for f in mismatches["/contract/item"])
+        # item2: Contract.jsx phantom read + Typed.tsx ghost_total type
+        messages = " ".join(f["message"] for f in mismatches["/contract/item2"])
+        assert "phantom" in messages and "ghost_total" in messages
 
 
 class TestDemoAcceptance:

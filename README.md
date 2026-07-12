@@ -134,6 +134,10 @@ untested endpoint handlers are flagged.
   `app/api/**/route.ts`, `[id]`/`[...slug]` params); tRPC: router
   procedures become endpoints and `trpc.user.byId.useQuery()` client
   calls wire to them by dotted path
+- TypeScript response types: `axios.get<Item>` / `useQuery<Item>` generics
+  resolve against local interfaces/type aliases — required fields become
+  the expected contract (probable confidence); optional fields (`?`) are
+  tolerated missing
 - React call sites: `fetch()`, `axios.get/post/put/delete/patch`, generic
   `api.*`/`client.*` wrappers, with template-literal URL resolution;
   calls inside React Query hooks (`useQuery`/`useMutation`) are recognized
@@ -148,7 +152,7 @@ untested endpoint handlers are flagged.
 | code | category | what it means |
 |---|---|---|
 | `hot_fragile` | operational | top-decile traffic on an endpoint with high/critical static flags |
-| `contract_mismatch` | contract | frontend reads a field the response model doesn't declare |
+| `contract_mismatch` | contract | frontend reads (or declares via TS generics) a field the response model doesn't declare |
 | `orphan_call` | contract | frontend calls a route that doesn't exist — will 404 |
 | `unused_endpoint` | contract | no frontend caller — dead code or external consumer |
 | `confirmed_dead` | contract | statically unreferenced AND zero traffic in window |

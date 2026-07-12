@@ -13,8 +13,8 @@ import hashlib
 import json
 import os
 
-CACHE_VERSION = 6   # v6: next.js/trpc records (nextjs adapter section) and
-                    #     trpc client-call records (frontend)
+CACHE_VERSION = 7   # v7: frontend parse output is {"calls", "types"} —
+                    #     TS interface/type-alias field sets (5.5)
 
 
 def content_hash(data: bytes) -> str:

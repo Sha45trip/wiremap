@@ -327,18 +327,53 @@ _REACT_QUERY_HOOKS = ("useQuery", "useMutation", "useInfiniteQuery",
                       "useSuspenseQuery")
 
 
-def _in_react_query(call_node, src: bytes) -> bool:
-    """True when the call sits inside a React Query hook's options —
-    the hook owns error handling, so no_error_handling must not fire."""
+def _in_react_query(call_node, src: bytes):
+    """The enclosing React Query hook call node, or None — the hook owns
+    error handling, and its generic (`useQuery<User>`) types the response."""
     cur = call_node.parent
     while cur is not None:
         if cur.type == "call_expression":
             fn = cur.child_by_field_name("function")
             if fn is not None and fn.type == "identifier" \
                     and _text(fn, src) in _REACT_QUERY_HOOKS:
-                return True
+                return cur
         cur = cur.parent
-    return False
+    return None
+
+
+def _call_type_argument(call_node, src: bytes) -> str | None:
+    """`axios.get<User>(...)` -> "User". Bare type identifiers only —
+    Array<User> / unions are not a certain object shape (precision)."""
+    ta = call_node.child_by_field_name("type_arguments")
+    if ta is None:
+        return None
+    named = [c for c in ta.named_children]
+    if len(named) == 1 and named[0].type == "type_identifier":
+        return _text(named[0], src)
+    return None
+
+
+def _ts_type_fields(node, src: bytes) -> tuple[str, dict] | None:
+    """interface X {...} / type X = {...} -> (name, {required, optional})."""
+    name_node = node.child_by_field_name("name")
+    if name_node is None:
+        return None
+    body = node.child_by_field_name("body")
+    if body is None:
+        value = node.child_by_field_name("value")
+        if value is None or value.type != "object_type":
+            return None
+        body = value
+    required, optional = [], []
+    for member in body.named_children:
+        if member.type != "property_signature":
+            continue
+        pname = member.child_by_field_name("name")
+        if pname is None:
+            continue
+        is_optional = any(c.type == "?" for c in member.children)
+        (optional if is_optional else required).append(_text(pname, src))
+    return _text(name_node, src), {"required": required, "optional": optional}
 
 
 def _call_features(call_node, src: bytes) -> dict:
@@ -369,6 +404,8 @@ def extract_frontend(root: str, graph: Graph,
     seen_components: set[str] = set()
     files_parsed = files_cached = 0
     seen_files: set[str] = set()
+    per_file: list[tuple[str, list]] = []
+    all_types: dict[str, dict] = {}
 
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in
@@ -388,19 +425,25 @@ def extract_frontend(root: str, graph: Graph,
                 continue    # unreadable (permissions, >MAX_PATH on Windows)
             seen_files.add(rel)
             sha = content_hash(src)
-            records = cache.get("frontend", rel, sha) if cache else None
-            if records is None:
-                records = _parse_source(src, rel, lang)
+            data = cache.get("frontend", rel, sha) if cache else None
+            if data is None:
+                data = _parse_source(src, rel, lang)
                 files_parsed += 1
                 if cache:
-                    cache.put("frontend", rel, sha, records)
+                    cache.put("frontend", rel, sha, data)
             else:
                 files_cached += 1
-            n_calls += _assemble(records, rel, graph, seen_components,
-                                 client_ops)
+            per_file.append((rel, data["calls"]))
+            all_types.update(data.get("types", {}))
 
     if cache:
         cache.prune("frontend", seen_files)
+
+    # assemble after the walk: response-type generics resolve against
+    # interfaces that may live in other files
+    for rel, records in per_file:
+        n_calls += _assemble(records, rel, graph, seen_components,
+                             client_ops, all_types)
 
     return {"api_calls": n_calls, "components": len(seen_components),
             "files_parsed": files_parsed, "files_cached": files_cached}
@@ -480,15 +523,21 @@ def _gql_records(node, src: bytes) -> list[dict]:
             for f in fields]
 
 
-def _parse_source(src: bytes, rel: str, lang) -> list[dict]:
-    """Parse one file into JSON-serializable call records (cacheable)."""
+def _parse_source(src: bytes, rel: str, lang) -> dict:
+    """Parse one file into JSON-serializable call records + TS types."""
     parser = Parser(lang)
     tree = parser.parse(src)
     records: list[dict] = []
+    types: dict[str, dict] = {}
     stack = [tree.root_node]
     while stack:
         node = stack.pop()
         stack.extend(node.children)
+        if node.type in ("interface_declaration", "type_alias_declaration"):
+            parsed = _ts_type_fields(node, src)
+            if parsed:
+                types[parsed[0]] = parsed[1]
+            continue
         if node.type == "tagged_template_expression":
             records.extend(_gql_records(node, src))
             continue
@@ -542,7 +591,8 @@ def _parse_source(src: bytes, rel: str, lang) -> list[dict]:
                     "component_line": comp_line,
                     "line": node.start_point[0] + 1,
                     "has_error_handling": (features["has_error_handling"]
-                                           or _in_react_query(node, src)),
+                                           or _in_react_query(node, src)
+                                           is not None),
                     "has_timeout": features["has_timeout"],
                 })
                 continue
@@ -561,22 +611,29 @@ def _parse_source(src: bytes, rel: str, lang) -> list[dict]:
 
         comp_name, comp_line = _enclosing_component(node, src)
         features = _call_features(node, src)
-        rq = _in_react_query(node, src)
+        rq_hook = _in_react_query(node, src)
+        # response type: generic on the call itself, else on the RQ hook
+        rtype = _call_type_argument(node, src)
+        if rtype is None and rq_hook is not None:
+            rtype = _call_type_argument(rq_hook, src)
         records.append({
             "method": method, "url": url, "confidence": confidence.value,
             "component": comp_name, "component_line": comp_line,
             "line": node.start_point[0] + 1,
-            "has_error_handling": features["has_error_handling"] or rq,
+            "has_error_handling": (features["has_error_handling"]
+                                   or rq_hook is not None),
             "has_timeout": features["has_timeout"],
-            "react_query": rq,
+            "react_query": rq_hook is not None,
+            "response_type": rtype,
             "expected_fields": _expected_fields(node, src, is_axios),
         })
-    return records
+    return {"calls": records, "types": types}
 
 
 def _assemble(records: list[dict], rel: str, graph: Graph,
               seen_components: set[str],
-              client_ops: dict | None = None) -> int:
+              client_ops: dict | None = None,
+              ts_types: dict | None = None) -> int:
     """Turn one file's call records into graph nodes, edges, and flags."""
     count = 0
     for rec in records:
@@ -611,7 +668,16 @@ def _assemble(records: list[dict], rel: str, graph: Graph,
             meta["graphql"] = True
         if rec.get("trpc"):
             meta["trpc"] = True
-        if rec.get("expected_fields"):
+        tinfo = (ts_types or {}).get(rec.get("response_type") or "")
+        if tinfo:
+            # declared TS response type beats heuristic reads; optional
+            # fields are excluded — the frontend tolerates their absence
+            meta["response_type"] = rec["response_type"]
+            meta["expected_fields"] = sorted(tinfo["required"])
+            if tinfo["optional"]:
+                meta["optional_fields"] = sorted(tinfo["optional"])
+            meta["fields_confidence"] = "probable"
+        elif rec.get("expected_fields"):
             meta["expected_fields"] = rec["expected_fields"]
             meta["fields_confidence"] = "inferred"
         graph.add_node(Node(
