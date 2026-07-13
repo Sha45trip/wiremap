@@ -17,7 +17,7 @@ import pytest
 from wiremap import cli
 from wiremap.collector import (RuntimeStore, make_collector, merge_runtime,
                                parse_otlp_traces)
-from wiremap.graph import Graph, Node, NodeType
+from wiremap.graph import Graph, Node, Edge, NodeType, EdgeType
 from wiremap.risk import DEFAULT_CONFIG
 
 from conftest import DEMO_DIR, PROJECT_ROOT
@@ -51,7 +51,8 @@ class TestParseOtlp:
         recs = parse_otlp_traces(otlp_payload(
             otlp_span(method="post", route="/api/orders", status=201, dur_ms=250)))
         assert recs == [{"method": "POST", "route": "/api/orders", "path": None,
-                         "status": 201, "ts_ms": NOW_MS, "dur_ms": 250.0}]
+                         "status": 201, "ts_ms": NOW_MS, "dur_ms": 250.0,
+                         "trace_id": ""}]
 
     def test_parses_legacy_semconv(self):
         recs = parse_otlp_traces(otlp_payload(
@@ -115,10 +116,13 @@ def _endpoint(g, method, path, flags=()):
     return n
 
 
-def _store_file(tmp_path, routed=None, unrouted=None, window=24):
+def _store_file(tmp_path, routed=None, unrouted=None, window=24,
+                client_index=None):
+    from wiremap.collector import STORE_VERSION
     p = tmp_path / "runtime.json"
-    p.write_text(json.dumps({"version": 1, "window_hours": window,
-                             "routed": routed or {}, "unrouted": unrouted or []}))
+    p.write_text(json.dumps({"version": STORE_VERSION, "window_hours": window,
+                             "routed": routed or {}, "unrouted": unrouted or [],
+                             "client_index": client_index or {}}))
     return str(p)
 
 
@@ -259,6 +263,89 @@ class TestMergeRuntime:
             "GET /busy": [obs(50) for _ in range(100)],
         }), DEFAULT_CONFIG, NOW_MS)
         assert not any(f["code"] == "hot_fragile" for f in cold.risk_flags)
+
+
+def _wire(g, comp, url, ep_id, method="POST"):
+    """component -> api_call -> endpoint, with makes_call + http edges."""
+    call_id = f"call:{comp}.jsx:1"
+    g.add_node(Node(id=f"cmp:{comp}", type=NodeType.COMPONENT, label=comp,
+                    file=f"{comp}.jsx", line=1))
+    g.add_node(Node(id=call_id, type=NodeType.API_CALL, label=f"{method} {url}",
+                    file=f"{comp}.jsx", line=1,
+                    meta={"method": method, "url": url}))
+    g.add_edge(Edge(id=f"cmp:{comp}->{call_id}", source=f"cmp:{comp}",
+                    target=call_id, type=EdgeType.MAKES_CALL))
+    g.add_edge(Edge(id=f"{call_id}=>{ep_id}", source=call_id, target=ep_id,
+                    type=EdgeType.HTTP))
+    return call_id
+
+
+def _obs_tid(dur, tid, status=200, age_min=5):
+    return [NOW_MS - age_min * 60_000, dur, status, tid]
+
+
+class TestPerWireAttribution:
+    def test_traffic_split_across_wires_by_client_trace(self, tmp_path):
+        g = Graph()
+        ep = _endpoint(g, "POST", "/api/orders")
+        _wire(g, "Checkout", "/api/orders", ep.id)
+        _wire(g, "AdminPanel", "/api/orders", ep.id)
+        # 3 requests from Checkout's trace path, 1 from AdminPanel — but both
+        # canonicalize to POST /api/orders, so they share the wire key and
+        # traffic splits evenly across the 2 wires
+        rows = [_obs_tid(100, "t1"), _obs_tid(100, "t2"),
+                _obs_tid(100, "t3"), _obs_tid(100, "t4")]
+        ci = {"t1": ["POST", "/api/orders"], "t2": ["POST", "/api/orders"],
+              "t3": ["POST", "/api/orders"], "t4": ["POST", "/api/orders"]}
+        merge_runtime(g, _store_file(tmp_path,
+                      routed={"POST /api/orders": rows}, client_index=ci),
+                      DEFAULT_CONFIG, NOW_MS)
+        wires = [e for e in g.edges.values() if e.type == EdgeType.HTTP]
+        assert all("runtime" in e.meta for e in wires)
+        assert all(e.meta["runtime"]["attributed"] for e in wires)
+        # 4 requests / 2 wires sharing the key = 2 each
+        assert sum(e.meta["runtime"]["req_count"] for e in wires) == 4.0
+
+    def test_distinct_urls_attribute_separately(self, tmp_path):
+        g = Graph()
+        ep = _endpoint(g, "GET", "/api/users/{id}")
+        c1 = _wire(g, "Profile", "/api/users/1", ep.id, method="GET")
+        c2 = _wire(g, "Sidebar", "/api/users/2", ep.id, method="GET")
+        # both client paths canonicalize to /api/users/:p (same key) -> split.
+        # client_index holds already-canonicalized paths (as ingest stores).
+        rows = [_obs_tid(50, f"t{i}") for i in range(6)]
+        ci = {f"t{i}": ["GET", "/api/users/:p"] for i in range(6)}
+        merge_runtime(g, _store_file(tmp_path,
+                      routed={"GET /api/users/:p": rows}, client_index=ci),
+                      DEFAULT_CONFIG, NOW_MS)
+        wires = [e for e in g.edges.values() if e.type == EdgeType.HTTP]
+        assert all(e.meta["runtime"]["req_count"] == 3.0 for e in wires)
+
+    def test_no_client_spans_leaves_unattributed(self, tmp_path):
+        g = Graph()
+        ep = _endpoint(g, "POST", "/api/orders")
+        _wire(g, "Checkout", "/api/orders", ep.id)
+        merge_runtime(g, _store_file(tmp_path,
+                      routed={"POST /api/orders": [obs(100) for _ in range(5)]}),
+                      DEFAULT_CONFIG, NOW_MS)
+        wire = next(e for e in g.edges.values() if e.type == EdgeType.HTTP)
+        assert wire.meta["runtime"]["attributed"] is False
+        assert wire.meta["runtime"]["req_count"] is None
+        assert wire.meta["runtime"]["endpoint_req_count"] == 5
+
+    def test_hot_fragile_names_top_caller(self, tmp_path):
+        g = Graph()
+        ep = _endpoint(g, "POST", "/api/orders",
+                       flags=[("sql_injection_risk", "critical")])
+        _wire(g, "Checkout", "/api/orders", ep.id)
+        _endpoint(g, "GET", "/quiet")
+        rows = [_obs_tid(100, f"t{i}") for i in range(50)]
+        ci = {f"t{i}": ["POST", "/api/orders"] for i in range(50)}
+        merge_runtime(g, _store_file(tmp_path, routed={
+            "POST /api/orders": rows, "GET /quiet": [obs(10)]},
+            client_index=ci), DEFAULT_CONFIG, NOW_MS)
+        hot = [f for f in ep.risk_flags if f["code"] == "hot_fragile"]
+        assert hot and "Checkout" in hot[0]["message"]
 
 
 def _load_replay_module():

@@ -22,9 +22,10 @@ import json
 import os
 import re
 import time
+from collections import Counter, defaultdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from .graph import Graph, NodeType, RiskFlag
+from .graph import Graph, NodeType, EdgeType, RiskFlag
 from .matcher import canonicalize
 
 try:    # optional extra: pip install wiremap[otlp]
@@ -36,11 +37,12 @@ try:    # optional extra: pip install wiremap[otlp]
 except ImportError:
     PROTOBUF_AVAILABLE = False
 
-STORE_VERSION = 1
+STORE_VERSION = 2   # v2: observations carry trace_id + client_index (6.4)
 DEFAULT_WINDOW_HOURS = 24.0
 
-# span kind 2 = SPAN_KIND_SERVER (incoming request)
+# span kind 2 = SPAN_KIND_SERVER (incoming request), 3 = CLIENT (outbound)
 _SERVER_KINDS = (2, "SPAN_KIND_SERVER")
+_CLIENT_KINDS = (3, "SPAN_KIND_CLIENT")
 
 
 # --------------------------------------------------------------- OTLP parsing
@@ -97,8 +99,35 @@ def parse_otlp_traces(payload: dict) -> list[dict]:
                     "status": int(status),
                     "ts_ms": start // 1_000_000,
                     "dur_ms": round((end - start) / 1_000_000, 1),
+                    "trace_id": span.get("traceId") or "",
                 })
+    records.extend(_client_records(payload))
     return records
+
+
+def _client_records(payload: dict) -> list[dict]:
+    """CLIENT (browser) spans -> {trace_id, method, path} for per-wire
+    attribution (6.4). Joined to server spans by trace_id at merge time."""
+    out = []
+    for rs in payload.get("resourceSpans", []):
+        for ss in (rs.get("scopeSpans") or
+                   rs.get("instrumentationLibrarySpans") or []):
+            for span in ss.get("spans", []):
+                if span.get("kind") not in _CLIENT_KINDS:
+                    continue
+                attrs = _attrs(span)
+                method = (attrs.get("http.request.method")
+                          or attrs.get("http.method"))
+                url = (attrs.get("url.full") or attrs.get("http.url")
+                       or attrs.get("url.path") or attrs.get("http.target"))
+                tid = span.get("traceId") or ""
+                if not (method and url and tid):
+                    continue
+                path = re.sub(r"^https?://[^/]+", "",
+                              str(url).split("?")[0]) or "/"
+                out.append({"client": True, "trace_id": tid,
+                            "method": str(method).upper(), "path": path})
+    return out
 
 
 def parse_otlp_protobuf(body: bytes) -> list[dict]:
@@ -159,6 +188,8 @@ class RuntimeStore:
         self.window_hours = window_hours
         self.routed: dict[str, list] = {}
         self.unrouted: list = []
+        # trace_id -> [method, canon_path, ts_ms] for browser CLIENT spans
+        self.client_index: dict[str, list] = {}
         if os.path.exists(path):
             try:
                 with open(path, encoding="utf-8") as f:
@@ -166,6 +197,7 @@ class RuntimeStore:
                 if isinstance(raw, dict) and raw.get("version") == STORE_VERSION:
                     self.routed = raw.get("routed", {})
                     self.unrouted = raw.get("unrouted", [])
+                    self.client_index = raw.get("client_index", {})
                     self.window_hours = raw.get("window_hours", window_hours)
             except (json.JSONDecodeError, OSError):
                 pass
@@ -173,13 +205,19 @@ class RuntimeStore:
     def ingest(self, records: list[dict]) -> int:
         n = 0
         for r in records:
+            if r.get("client"):
+                self.client_index[r["trace_id"]] = [
+                    r["method"], canonicalize(r["path"])]
+                continue
+            tid = r.get("trace_id", "")
             if r["route"]:
                 key = f"{r['method']} {canonicalize(r['route'])}"
                 self.routed.setdefault(key, []).append(
-                    [r["ts_ms"], r["dur_ms"], r["status"]])
+                    [r["ts_ms"], r["dur_ms"], r["status"], tid])
             elif r["path"]:
                 self.unrouted.append(
-                    [r["ts_ms"], r["method"], r["path"], r["dur_ms"], r["status"]])
+                    [r["ts_ms"], r["method"], r["path"], r["dur_ms"],
+                     r["status"], tid])
             else:
                 continue
             n += 1
@@ -190,13 +228,19 @@ class RuntimeStore:
         self.routed = {k: kept for k, v in self.routed.items()
                        if (kept := [o for o in v if o[0] >= cutoff])}
         self.unrouted = [o for o in self.unrouted if o[0] >= cutoff]
+        # keep only trace ids still referenced by a live observation
+        live = {o[3] for v in self.routed.values() for o in v if len(o) > 3}
+        live |= {o[5] for o in self.unrouted if len(o) > 5}
+        self.client_index = {t: v for t, v in self.client_index.items()
+                             if t in live}
 
     def save(self) -> None:
         self.prune()
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         with open(self.path, "w", encoding="utf-8") as f:
             json.dump({"version": STORE_VERSION, "window_hours": self.window_hours,
-                       "routed": self.routed, "unrouted": self.unrouted}, f)
+                       "routed": self.routed, "unrouted": self.unrouted,
+                       "client_index": self.client_index}, f)
 
 
 # ---------------------------------------------------------------- scan merge
@@ -210,6 +254,60 @@ def _pattern_regex(canonical: str) -> re.Pattern:
     parts = [("[^/]+" if seg == ":p" else re.escape(seg))
              for seg in canonical.split("/")]
     return re.compile("^" + "/".join(parts) + "$")
+
+
+def _attribute_wires(graph: Graph, ep_obs: dict, store: "RuntimeStore",
+                     window: float) -> dict:
+    """Split each endpoint's traffic across its incoming HTTP wires using
+    the client trace_id -> client-path index, and set edge.meta.runtime.
+    Returns {ep_id: (component_label, req_count)} for the hottest wire."""
+    # call_id -> component label (source of the makes_call edge)
+    comp_of: dict[str, str] = {}
+    for e in graph.edges_of(EdgeType.MAKES_CALL):
+        src = graph.nodes.get(e.source)
+        if src is not None:
+            comp_of[e.target] = src.label
+    edges_by_ep: dict[str, list] = defaultdict(list)
+    for e in graph.edges_of(EdgeType.HTTP):
+        edges_by_ep[e.target].append(e)
+
+    top: dict[str, tuple] = {}
+    for ep_id, obs in ep_obs.items():
+        edges = edges_by_ep.get(ep_id, [])
+        if not edges:
+            continue
+        # count this endpoint's requests by their client-side canonical path
+        hits: Counter = Counter()
+        for o in obs:
+            tid = o[3] if len(o) > 3 else ""
+            ci = store.client_index.get(tid)
+            if ci:
+                hits[(ci[0], ci[1])] += 1
+        # group edges by their wire key so shared endpoints split evenly
+        by_key: dict[tuple, list] = defaultdict(list)
+        for e in edges:
+            call = graph.nodes.get(e.source)
+            if call is None:
+                continue
+            key = (call.meta.get("method"),
+                   canonicalize(call.meta.get("url", "")))
+            by_key[key].append(e)
+        best = (None, 0)
+        for key, es in by_key.items():
+            total = hits.get(key, 0)
+            share = round(total / len(es), 1) if es else 0
+            for e in es:
+                attributed = bool(hits)
+                e.meta["runtime"] = {
+                    "req_count": share if attributed else None,
+                    "endpoint_req_count": len(obs),
+                    "window_hours": window, "attributed": attributed}
+                comp = comp_of.get(e.source)
+                if attributed and share > best[1]:
+                    best = (comp, share)
+        if best[0] is not None:
+            top[ep_id] = best
+    return top
 
 
 def merge_runtime(graph: Graph, runtime_path: str, config: dict,
@@ -229,6 +327,7 @@ def merge_runtime(graph: Graph, runtime_path: str, config: dict,
     # static severity snapshot BEFORE runtime flags are added, for hot_fragile
     static_high = {ep.id: any(f["severity"] in ("high", "critical")
                               for f in ep.risk_flags) for ep in endpoints}
+    ep_obs: dict[str, list] = {}   # ep.id -> observations, for wire attribution
 
     with_traffic = 0
     for ep in endpoints:
@@ -237,8 +336,10 @@ def merge_runtime(graph: Graph, runtime_path: str, config: dict,
         obs = list(store.routed.get(f"{method} {canon}", []))
         confidence = "certain"
         pattern = _pattern_regex(canon)
-        fallback = [[ts, dur, status] for ts, m, path, dur, status in store.unrouted
-                    if m == method and pattern.match(path.split("?")[0].rstrip("/") or "/")]
+        fallback = [[o[0], o[3], o[4], o[5] if len(o) > 5 else ""]
+                    for o in store.unrouted
+                    if o[1] == method
+                    and pattern.match(o[2].split("?")[0].rstrip("/") or "/")]
         if fallback:
             if not obs:
                 confidence = "probable"
@@ -248,6 +349,7 @@ def merge_runtime(graph: Graph, runtime_path: str, config: dict,
             ep.meta["runtime"] = {"req_count": 0, "window_hours": window}
             continue
         with_traffic += 1
+        ep_obs[ep.id] = obs
         durations = sorted(o[1] for o in obs)
         errors = sum(1 for o in obs if o[2] >= 500)
         ep.meta["runtime"] = {
@@ -258,6 +360,10 @@ def merge_runtime(graph: Graph, runtime_path: str, config: dict,
             "window_hours": window,
             "confidence": confidence,
         }
+
+    # ---- per-wire attribution (6.4): split endpoint traffic across the
+    # frontend call sites that produced it, joined by client trace_id ----
+    top_caller = _attribute_wires(graph, ep_obs, store, window)
 
     # ---- runtime flags -----------------------------------------------------
     flags_added = 0
@@ -313,15 +419,22 @@ def merge_runtime(graph: Graph, runtime_path: str, config: dict,
                             if f["severity"] in ("high", "critical")
                             and f["code"] not in ("high_latency",
                                                   "high_error_rate")})
+            caller = top_caller.get(ep.id)
+            caller_note = (f"; most exposed caller: {caller[0]} "
+                           f"(~{caller[1]:g} req)" if caller else "")
             graph.flag_node(ep.id, RiskFlag(
                 code="hot_fragile", severity="critical", category="operational",
                 message=f"Top-decile traffic ({rt['req_count']} req/"
                         f"{window:g}h) on an endpoint with high/critical "
-                        "static flags",
+                        "static flags" + caller_note,
                 evidence=f"{ep.file}:{ep.line} carries {', '.join(codes)} "
-                         f"while serving {rt['req_count']} requests",
+                         f"while serving {rt['req_count']} requests"
+                         + (f"; {caller[0]} sends most of them" if caller
+                            else ""),
                 suggestion="Fix the static issues here first — this endpoint "
-                           "has the highest blast radius in the system",
+                           "has the highest blast radius in the system"
+                           + (f", and {caller[0]}'s users are directly "
+                              "exposed" if caller else ""),
             ))
             flags_added += 1
 

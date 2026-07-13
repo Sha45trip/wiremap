@@ -55,6 +55,11 @@ Both OTLP encodings are accepted: JSON works out of the box; for
 `http/protobuf` (most exporters' default) install the extra —
 `pip install wiremap[otlp]`.
 
+Per-wire attribution: if the browser is also instrumented (standard OTel
+web spans), client→server spans are joined by trace id so each endpoint's
+traffic is split across the frontend call sites that produced it — shown on
+the wire in the viewer, and `hot_fragile` names the most-exposed caller.
+
 Try it on the bundled demo:
 
 ```bash

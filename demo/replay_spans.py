@@ -17,12 +17,18 @@ Usage:
 """
 import json
 import sys
+import base64
 import time
 import urllib.request
 
 
+def _tid(n):
+    """A valid OTLP trace id: base64 of 16 bytes (round-trips json<->proto)."""
+    return base64.b64encode(str(n).zfill(16).encode()).decode()
+
+
 def _span(method, dur_ms, status=200, route=None, path=None,
-          offset_min=0, kind=2, legacy=False, now_ns=None):
+          offset_min=0, kind=2, legacy=False, now_ns=None, trace_id=None):
     start = int(now_ns - offset_min * 60 * 1_000_000_000)
     end = int(start + dur_ms * 1_000_000)
     if legacy:
@@ -40,9 +46,23 @@ def _span(method, dur_ms, status=200, route=None, path=None,
             attrs.append({"key": "http.route", "value": {"stringValue": route}})
         if path:
             attrs.append({"key": "url.path", "value": {"stringValue": path}})
-    return {"name": f"{method} {route or path}", "kind": kind,
+    span = {"name": f"{method} {route or path}", "kind": kind,
             "startTimeUnixNano": str(start), "endTimeUnixNano": str(end),
             "attributes": attrs}
+    if trace_id:
+        span["traceId"] = trace_id
+    return span
+
+
+def _client_span(method, url, offset_min, now_ns, trace_id):
+    """A browser CLIENT span (kind 3) sharing a trace with a server span."""
+    start = int(now_ns - offset_min * 60 * 1_000_000_000)
+    return {"name": f"{method} {url}", "kind": 3,
+            "startTimeUnixNano": str(start), "endTimeUnixNano": str(start),
+            "traceId": trace_id,
+            "attributes": [
+                {"key": "http.request.method", "value": {"stringValue": method}},
+                {"key": "url.full", "value": {"stringValue": url}}]}
 
 
 def _payload(spans):
@@ -56,14 +76,24 @@ def _payload(spans):
 def build_batches(now_ns=None):
     """Three OTLP payloads; importable by tests."""
     now_ns = now_ns or time.time_ns()
-    orders = []
+    orders, order_clients = [], []
     for i in range(56):
+        tid = _tid(i)
         orders.append(_span("POST", dur_ms=200 + (i % 8) * 90,
                             status=500 if i in (7, 23) else 201,
-                            route="/api/orders", offset_min=i, now_ns=now_ns))
+                            route="/api/orders", offset_min=i, now_ns=now_ns,
+                            trace_id=tid))
+        # browser CLIENT span for the OrderForm submit component (6.4)
+        order_clients.append(_client_span(
+            "POST", "http://localhost:3000/api/orders", i, now_ns, tid))
     for i, slow in enumerate((1200, 1300, 1400, 1600)):
+        tid = _tid(56 + i)
         orders.append(_span("POST", dur_ms=slow, status=201,
-                            route="/api/orders", offset_min=57 + i, now_ns=now_ns))
+                            route="/api/orders", offset_min=57 + i,
+                            now_ns=now_ns, trace_id=tid))
+        order_clients.append(_client_span(
+            "POST", "http://localhost:3000/api/orders", 57 + i, now_ns, tid))
+    orders.extend(order_clients)
 
     users = [_span("GET", dur_ms=30 + (i % 6) * 10, status=200,
                    route="/api/users/{user_id}", path=f"/api/users/{i}",

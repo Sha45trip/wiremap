@@ -370,7 +370,12 @@ function show(item, kind) {
         <b style="color:${item.meta.coverage_pct === 0 ? 'var(--bad)' :
                           item.meta.coverage_pct < 50 ? 'var(--warn)' : 'var(--ok)'}">
         ${item.meta.coverage_pct}%</b></div>` : ''}
-    ${item.meta && item.meta.runtime ? (item.meta.runtime.req_count ? `
+    ${item.meta && item.meta.runtime && item.meta.runtime.endpoint_req_count !== undefined ? `
+      <div class="cov">wire traffic (${item.meta.runtime.window_hours}h):
+        ${item.meta.runtime.attributed
+          ? `<b>${item.meta.runtime.req_count}</b> of ${item.meta.runtime.endpoint_req_count} endpoint req`
+          : `<b style="color:var(--muted)">${item.meta.runtime.endpoint_req_count}</b> endpoint req · unattributed`}</div>`
+      : item.meta && item.meta.runtime ? (item.meta.runtime.req_count ? `
       <div class="cov">runtime (${item.meta.runtime.window_hours}h):
         <b>${item.meta.runtime.req_count}</b> req ·
         p95 <b>${item.meta.runtime.p95_ms}ms</b> ·
