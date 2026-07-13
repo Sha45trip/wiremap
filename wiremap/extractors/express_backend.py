@@ -54,6 +54,7 @@ def _parse_source(src: bytes, rel: str, lang) -> dict:
     tree = Parser(lang).parse(src)
     routers: set[str] = set()      # vars from express() / express.Router()
     requires: dict[str, str] = {}  # var -> require("./spec")
+    router_auth: set[str] = set()  # routers with an auth .use() (6.3)
     routes, mounts = [], []
     exported = None
 
@@ -101,6 +102,13 @@ def _parse_source(src: bytes, rel: str, lang) -> dict:
         args = n.child_by_field_name("arguments")
         if args is None or args.named_child_count < 1:
             continue
+        # router-scope auth: router.use(requireAuth) / router.use(passport...)
+        # — any auth-smelling identifier arg guards every route on it (6.3)
+        if verb == "use" and any(
+                a.type == "identifier" and _AUTH_RE.search(_text(a, src))
+                for a in args.named_children):
+            router_auth.add(_text(obj, src))
+            continue
         first = args.named_children[0]
         if first.type != "string":
             continue                      # computed path — skip, never guess
@@ -137,6 +145,11 @@ def _parse_source(src: bytes, rel: str, lang) -> dict:
                        "owner": _text(obj, src), "auth": has_auth,
                        "line": n.start_point[0] + 1,
                        "handler": handler_name})
+
+    # router-scope auth applies to every route on that router
+    for r in routes:
+        if r["owner"] in router_auth:
+            r["auth"] = True
 
     return {"routes": routes, "mounts": mounts, "exported": exported,
             "routers": sorted(routers), "requires": requires}

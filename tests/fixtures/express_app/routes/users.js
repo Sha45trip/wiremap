@@ -3,6 +3,9 @@ const { requireAuth } = require("../middleware/auth");
 
 const router = express.Router();
 
+// router-scope auth: guards every route below (6.3)
+router.use(requireAuth);
+
 router.get("/", (req, res) => res.json([]));
 
 router.get("/:id", getUser);

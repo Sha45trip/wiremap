@@ -49,6 +49,7 @@ class RouteInfo:
     router_prefix: str = ""
     response_model: str = ""   # bare Name from response_model= or -> annotation
     request_model: str = ""    # bare Name from a body-param annotation (6.2)
+    annot_names: list = field(default_factory=list)  # param annot Names (6.3)
 
 
 @dataclass
@@ -94,6 +95,23 @@ def _resolve_relative(module: str, is_init: bool, level: int,
     if target:
         base = base + target.split(".")
     return ".".join(base) or None
+
+
+def _deps_list_has_auth(node) -> bool:
+    """A FastAPI `dependencies=[Depends(x), ...]` value where any x smells
+    auth-related (router-scope or per-route decorator auth, 6.3)."""
+    if not isinstance(node, (ast.List, ast.Tuple)):
+        return False
+    for el in node.elts:
+        if isinstance(el, ast.Call):
+            callee = el.func
+            cname = callee.attr if isinstance(callee, ast.Attribute) \
+                else getattr(callee, "id", "")
+            if cname == "Depends" and el.args:
+                inner = ast.unparse(el.args[0]).lower()
+                if any(h in inner for h in AUTH_HINTS):
+                    return True
+    return False
 
 
 def _dotted_name(expr) -> str | None:
@@ -142,6 +160,8 @@ class _ModuleVisitor(ast.NodeVisitor):
         self.functions: dict[str, FunctionInfo] = {}
         self.imports: dict[str, str] = {}           # local name -> dotted fqn
         self.router_prefixes: dict[str, str] = {}   # var name -> prefix
+        self.router_auth: set[str] = set()          # routers w/ auth deps (6.3)
+        self.auth_type_aliases: set[str] = set()     # X=Annotated[..,Depends(auth)]
         self.orm_models: list[tuple[str, int]] = []
         self.pydantic_models: dict[str, dict] = {}  # name -> {fields, bases}
         self.url_entries: list[dict] = []           # django urlpatterns items
@@ -178,13 +198,26 @@ class _ModuleVisitor(ast.NodeVisitor):
             name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
             if name in ("APIRouter", "Blueprint"):
                 prefix = ""
+                has_auth = False
                 for kw in node.value.keywords:
                     if kw.arg in ("prefix", "url_prefix") \
                             and isinstance(kw.value, ast.Constant):
                         prefix = kw.value.value
+                    elif kw.arg == "dependencies":   # router-scope auth (6.3)
+                        has_auth = _deps_list_has_auth(kw.value)
                 for tgt in node.targets:
                     if isinstance(tgt, ast.Name):
                         self.router_prefixes[tgt.id] = prefix
+                        if has_auth:
+                            self.router_auth.add(tgt.id)
+        # auth type alias: CurrentUser = Annotated[User, Depends(get_user)]
+        if isinstance(node.value, ast.Subscript):
+            txt = ast.unparse(node.value).lower()
+            if txt.startswith("annotated[") and "depends(" in txt \
+                    and any(h in txt for h in AUTH_HINTS):
+                for tgt in node.targets:
+                    if isinstance(tgt, ast.Name):
+                        self.auth_type_aliases.add(tgt.id)
         for tgt in node.targets:
             if isinstance(tgt, ast.Name) and tgt.id == "urlpatterns":
                 self._collect_url_entries(node.value)
@@ -353,18 +386,26 @@ class _ModuleVisitor(ast.NodeVisitor):
             # response model: bare-Name only — List[X]/Optional[X] are not a
             # CERTAIN field set, and the precision rule says skip those
             response_model = ""
+            dec_deps_auth = False
             for kw in dec.keywords:
                 if kw.arg == "response_model" and isinstance(kw.value, ast.Name):
                     response_model = kw.value.id
+                elif kw.arg == "dependencies":     # per-route auth (6.3)
+                    dec_deps_auth = _deps_list_has_auth(kw.value)
             if not response_model and isinstance(fn_node.returns, ast.Name):
                 response_model = fn_node.returns.id
+            # auth from: handler dep/decorator, router-scope deps, or the
+            # route decorator's own dependencies= (6.3)
+            has_auth = (self._has_auth_dependency(fn_node)
+                        or owner in self.router_auth or dec_deps_auth)
             return [RouteInfo(
                 method=f.attr.upper(), path=path,
                 handler=f"{self.module}.{qname}" if self.module else qname,
                 file=self.rel, line=fn_node.lineno, framework="fastapi",
-                has_auth_dep=self._has_auth_dependency(fn_node),
+                has_auth_dep=has_auth,
                 router_prefix=prefix, response_model=response_model,
                 request_model=self._request_model(fn_node),
+                annot_names=self._param_annot_names(fn_node),
             )]
         # Flask: @app.route(...) / @bp.route(...), one RouteInfo per method
         if isinstance(f, ast.Attribute) and f.attr == "route":
@@ -403,10 +444,24 @@ class _ModuleVisitor(ast.NodeVisitor):
                 return a.annotation.id
         return ""
 
-    @staticmethod
-    def _has_auth_dependency(fn_node) -> bool:
-        """FastAPI: any param default Depends(x) where x smells auth-related,
-        or any decorator like @login_required."""
+    @classmethod
+    def _param_annot_names(cls, fn_node) -> list:
+        """Bare-Name param annotations (candidates for an auth type alias
+        defined in another file, resolved at assembly, 6.3)."""
+        args = fn_node.args
+        out = []
+        for a in (list(args.posonlyargs) + list(args.args)
+                  + list(args.kwonlyargs)):
+            if isinstance(a.annotation, ast.Name) \
+                    and a.annotation.id not in cls._NON_BODY_ANNOT:
+                out.append(a.annotation.id)
+        return out
+
+    def _has_auth_dependency(self, fn_node) -> bool:
+        """FastAPI auth on a handler: a param default Depends(auth), an
+        annotated dependency `Annotated[.., Depends(auth)]` or an auth type
+        alias (`current_user: CurrentUser`, 6.3), or an @login_required-style
+        decorator."""
         args = fn_node.args
         for default in list(args.defaults) + list(args.kw_defaults or []):
             if isinstance(default, ast.Call):
@@ -416,6 +471,18 @@ class _ModuleVisitor(ast.NodeVisitor):
                     inner = ast.unparse(default.args[0]).lower() if default.args else ""
                     if any(h in inner for h in AUTH_HINTS):
                         return True
+        # param annotations: Annotated[T, Depends(auth)] or an auth alias
+        for a in (list(args.posonlyargs) + list(args.args)
+                  + list(args.kwonlyargs)):
+            ann = a.annotation
+            if ann is None:
+                continue
+            if isinstance(ann, ast.Name) and ann.id in self.auth_type_aliases:
+                return True
+            if isinstance(ann, ast.Subscript):
+                txt = ast.unparse(ann).lower()
+                if "depends(" in txt and any(h in txt for h in AUTH_HINTS):
+                    return True
         for dec in fn_node.decorator_list:
             name = ast.unparse(dec).lower()
             if any(h in name for h in AUTH_HINTS):
@@ -569,6 +636,7 @@ def _parse_source(source: str, rel: str) -> dict:
         "url_entries": v.url_entries,
         "drf": v.drf_registrations,
         "gql": v.gql_resolvers,
+        "auth_aliases": sorted(v.auth_type_aliases),
     }
 
 
@@ -738,6 +806,7 @@ def extract_backend(root: str, graph: Graph,
     all_url_entries: dict[str, list] = {}   # module -> django urlpatterns
     all_drf: dict[str, list] = {}           # module -> DRF registrations
     all_gql: list[dict] = []                # strawberry/graphene root fields
+    all_auth_aliases: set[str] = set()      # cross-file auth type aliases (6.3)
     files_parsed = files_cached = 0
     seen_files: set[str] = set()
 
@@ -777,6 +846,7 @@ def extract_backend(root: str, graph: Graph,
             if data.get("drf"):
                 all_drf[data["module"]] = data["drf"]
             all_gql.extend(data.get("gql", []))
+            all_auth_aliases.update(data.get("auth_aliases", []))
 
     if cache:
         cache.prune("backend", seen_files)
@@ -807,8 +877,12 @@ def extract_backend(root: str, graph: Graph,
         full_path = (r.router_prefix.rstrip("/") + "/" + r.path.lstrip("/")).rstrip("/") or "/"
         ep_id = f"ep:{r.method} {full_path}"
         info = all_functions.get(r.handler)
+        # cross-file auth type alias: a param annotated with an alias like
+        # CurrentUser defined in another module counts as auth (6.3)
+        has_auth = r.has_auth_dep or any(a in all_auth_aliases
+                                         for a in r.annot_names)
         meta = {"handler": r.handler, "framework": r.framework,
-                "has_auth": r.has_auth_dep, "raw_path": full_path,
+                "has_auth": has_auth, "raw_path": full_path,
                 "handler_end_line": info.end_line if info else 0}
         if r.response_model and r.response_model in all_pydantic:
             meta["response_model"] = r.response_model
@@ -868,7 +942,7 @@ def extract_backend(root: str, graph: Graph,
                                "function, or validate/escape before passing",
                 ))
         mutating = r.method in ("POST", "PUT", "DELETE", "PATCH")
-        if mutating and not r.has_auth_dep:
+        if mutating and not has_auth:
             graph.flag_node(ep_id, RiskFlag(
                 code="missing_auth", severity="high", category="security",
                 message=f"{r.method} endpoint has no detectable auth dependency",

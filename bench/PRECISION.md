@@ -87,6 +87,23 @@ bodies to compare — correctly silent). Firing proven on fixtures
 (tests/test_request_contract.py). Same conservative posture as 2.4:
 CERTAIN backend model + complete (spread-free) frontend body only.
 
+## 6.3 router/middleware auth — precision (2026-07-11)
+
+Kills missing_auth FPs from router-scope and annotated-dependency auth:
+FastAPI `APIRouter(dependencies=[Depends(auth)])`, per-route decorator
+`dependencies=`, `Annotated[T, Depends(auth)]` params (inline + cross-file
+type aliases like `CurrentUser`), Express `router.use(authMiddleware)`.
+Proven on fixtures (test_scoped_auth.py) + it corrected the existing
+Express DELETE case.
+
+Corpus note: fastapi-template still shows 7 missing_auth. 2 are genuinely
+public by design (password-recovery, reset-password — flag says "or mark
+public"). The other 5 (items/users CRUD) import `CurrentUser` from a
+`deps.py` that FAILS ast.parse in this clone (`except A, B:` — invalid
+Python 3). wiremap skips unparseable files gracefully (no crash), so their
+aliases are lost — an inherent static-analysis limit, not a detector bug.
+The feature resolves aliases correctly across valid files.
+
 ## Numbers after fixes (re-run)
 
 See RESULTS.md — regenerated after the fixes above; the redash route

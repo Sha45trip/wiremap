@@ -58,9 +58,16 @@ class TestAuth:
         assert "missing_auth" not in flags(express_graph, "ep:POST /api/users")
 
     def test_unauthed_mutations_flagged(self, express_graph):
+        # /webhook is on `app`, which has no auth middleware
         assert "missing_auth" in flags(express_graph, "ep:POST /webhook")
-        assert "missing_auth" in flags(express_graph,
-                                       "ep:DELETE /api/users/:id")
+
+    def test_router_use_auth_guards_all_routes(self, express_graph):
+        # router.use(requireAuth) protects every route on the users router
+        # (6.3), so the DELETE mutation must NOT flag
+        assert express_graph.nodes["ep:DELETE /api/users/:id"].meta[
+            "has_auth"] is True
+        assert "missing_auth" not in flags(express_graph,
+                                           "ep:DELETE /api/users/:id")
 
     def test_gets_never_flagged(self, express_graph):
         assert flags(express_graph, "ep:GET /health") == set()

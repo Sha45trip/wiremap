@@ -158,7 +158,7 @@ untested endpoint handlers are flagged.
 | `orphan_call` | contract | frontend calls a route that doesn't exist — will 404 |
 | `unused_endpoint` | contract | no frontend caller — dead code or external consumer |
 | `confirmed_dead` | contract | statically unreferenced AND zero traffic in window |
-| `missing_auth` | security | mutating endpoint with no auth dependency |
+| `missing_auth` | security | mutating endpoint with no auth (per-handler, router-scope, or annotated-dependency) |
 | `sql_injection_risk` | security | raw SQL built via f-string/concatenation — including request data flowing into SQL built in another function (up to 2 call hops) |
 | `no_error_handling` | quality | I/O without try/except or promise without .catch |
 | `untested_handler` | quality | endpoint handler with 0% (high) or <50% (medium) coverage |
