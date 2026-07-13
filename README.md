@@ -104,11 +104,14 @@ wiremap diff base/graph.json head/graph.json --fail-on critical  # exit 1 on new
 
 See [action/README.md](action/README.md) for the full workflow.
 
-Security model (v1): intended for **trusted networks** — the viewer and
-graph are served without auth. Set `WIREMAP_TOKEN` to require
+Security model: intended for **trusted networks** — the viewer and graph
+are served without auth. Set `WIREMAP_TOKENS` to require
 `Authorization: Bearer <token>` on the mutating routes (`/v1/traces`,
-`/rescan`); OTel exporters pass it via
-`OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <token>"`. The repo is
+`/rescan`). It accepts per-user tokens — `WIREMAP_TOKENS="alice:tok1,bob:tok2"`
+— logged by label; a bare `WIREMAP_TOKEN=tok` still works. OTel exporters
+pass the token via `OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <token>"`.
+For public exposure, terminate TLS at a reverse proxy (nginx/Caddy) in
+front of the container — wiremap does not serve HTTPS itself. The repo is
 mounted read-only; outputs live on a named volume.
 
 ## Coverage overlay (coverage.py)
