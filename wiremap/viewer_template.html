@@ -111,8 +111,10 @@
 </div>
 <div id="panel"><div class="empty">Click a node or wire<br>to inspect its evidence</div></div>
 <script id="graph-data" type="application/json">__GRAPH_JSON__</script>
+<script id="history-data" type="application/json">__HISTORY_JSON__</script>
 <script>
 const G = JSON.parse(document.getElementById('graph-data').textContent);
+const HIST = JSON.parse(document.getElementById('history-data').textContent || '[]');
 const COLS = ["component","api_call","endpoint","function","db_model"];
 const COLLABEL = {component:"Components", api_call:"API calls",
                   endpoint:"Endpoints", "function":"Functions", db_model:"Models"};
@@ -441,6 +443,51 @@ document.getElementById('s-crit').textContent =
   allFlags.filter(f => f.severity === 'critical').length;
 
 render();
+
+// ---- trends (6.5): risk-over-time sparkline + flag churn, in the panel
+// default state when nothing is selected -------------------------------------
+function sparkline(vals, w, h) {
+  if (vals.length < 2) return '';
+  const mn = Math.min(...vals), mx = Math.max(...vals), span = mx - mn || 1;
+  const pts = vals.map((v, i) =>
+    `${(i / (vals.length - 1) * w).toFixed(1)},${(h - (v - mn) / span * h).toFixed(1)}`);
+  return `<svg width="${w}" height="${h}" style="display:block;margin:8px 0">
+    <polyline fill="none" stroke="var(--accent)" stroke-width="1.5"
+      points="${pts.join(' ')}"/></svg>`;
+}
+function renderTrends() {
+  const panel = document.getElementById('panel');
+  if (!HIST.length) return;
+  const last = HIST[HIST.length - 1], prev = HIST.length > 1 ? HIST[HIST.length - 2] : null;
+  const risks = HIST.map(s => s.total_risk);
+  let churn = '';
+  if (prev) {
+    const intro = Object.keys(last.by_code).filter(c =>
+      last.by_code[c] > (prev.by_code[c] || 0));
+    const resolved = Object.keys(prev.by_code).filter(c =>
+      prev.by_code[c] > (last.by_code[c] || 0));
+    const d = (last.total_risk - prev.total_risk).toFixed(1);
+    churn = `<div class="cov">since last scan:
+      <b style="color:${d > 0 ? 'var(--bad)' : d < 0 ? 'var(--ok)' : 'var(--muted)'}">
+      ${d > 0 ? '+' : ''}${d}</b> risk</div>
+      ${intro.length ? `<div class="cov">introduced:
+        <b style="color:var(--bad)">${intro.map(esc).join(', ')}</b></div>` : ''}
+      ${resolved.length ? `<div class="cov">resolved:
+        <b style="color:var(--ok)">${resolved.map(esc).join(', ')}</b></div>` : ''}`;
+  }
+  panel.innerHTML = `
+    <h2>trends</h2>
+    <div class="loc">${HIST.length} scan${HIST.length > 1 ? 's' : ''} ·
+      latest ${esc(last.iso)}</div>
+    <div class="score" style="color:${heat(last.total_risk / Math.max(last.nodes, 1))}">
+      ${last.total_risk}<span style="font-size:12px;color:var(--muted)">
+      total risk</span></div>
+    ${sparkline(risks, 300, 40)}
+    ${churn}
+    <div class="empty" style="margin-top:24px">Click a node or wire<br>
+      to inspect its evidence</div>`;
+}
+renderTrends();
 </script>
 </body>
 </html>

@@ -23,6 +23,7 @@ from .graph import Graph
 from .extractors.express_backend import extract_express
 from .extractors.nextjs_backend import extract_nextjs
 from .gql import ingest_sdl
+from .history import load_history, record_snapshot
 from .extractors.python_backend import extract_backend
 from .extractors.react_frontend import extract_frontend
 from .matcher import match
@@ -112,6 +113,10 @@ def perform_scan(project_root: str, backend: str | None = None,
     if cache is not None:
         cache.save()
 
+    # scan history: append a snapshot (skipped if the graph is unchanged)
+    snap = record_snapshot(out_dir, graph)
+    history = load_history(out_dir)
+
     graph_path = os.path.join(out_dir, "graph.json")
     graph.save(graph_path)
 
@@ -120,6 +125,8 @@ def perform_scan(project_root: str, backend: str | None = None,
         html = f.read()
     html = html.replace("__GRAPH_JSON__",
                         json.dumps(graph.to_dict()).replace("</", "<\\/"))
+    html = html.replace("__HISTORY_JSON__",
+                        json.dumps(history).replace("</", "<\\/"))
     viewer_path = os.path.join(out_dir, "wiremap.html")
     with open(viewer_path, "w") as f:
         f.write(html)
@@ -128,7 +135,8 @@ def perform_scan(project_root: str, backend: str | None = None,
             "graph_path": graph_path, "viewer_path": viewer_path,
             "b": b_stats, "f": f_stats, "m": m_stats, "oa": oa_stats,
             "nx": nx_stats, "gql": g_stats if g_stats["root_fields"] else None,
-            "cov": cov_stats, "rt": rt_stats, "r": r_stats}
+            "cov": cov_stats, "rt": rt_stats, "r": r_stats,
+            "history": history, "snapshot": snap}
 
 
 def scan(args) -> int:

@@ -237,6 +237,59 @@
       ]
     },
     {
+      "id": "ep:POST /api/danger",
+      "type": "endpoint",
+      "label": "POST /api/danger",
+      "file": "app/main.py",
+      "line": 35,
+      "meta": {
+        "handler": "app.main.danger",
+        "framework": "fastapi",
+        "has_auth": false,
+        "raw_path": "/api/danger",
+        "handler_end_line": 36,
+        "runtime": {
+          "req_count": 0,
+          "window_hours": 24.0
+        }
+      },
+      "risk_score": 100,
+      "risk_flags": [
+        {
+          "code": "no_error_handling",
+          "severity": "high",
+          "category": "quality",
+          "message": "Handler performs I/O with no try/except",
+          "evidence": "app/main.py:36 calls `execute` outside any try block",
+          "suggestion": "Wrap I/O in try/except and return a controlled error response"
+        },
+        {
+          "code": "sql_injection_risk",
+          "severity": "critical",
+          "category": "security",
+          "message": "Raw SQL built with string interpolation",
+          "evidence": "app/main.py:36 `f\"DELETE FROM x WHERE id = {payload['id']}\"`",
+          "suggestion": "Use parameterized queries or the ORM"
+        },
+        {
+          "code": "missing_auth",
+          "severity": "high",
+          "category": "security",
+          "message": "POST endpoint has no detectable auth dependency",
+          "evidence": "app/main.py:35 handler `app.main.danger`",
+          "suggestion": "Add an auth dependency (e.g. Depends(get_current_user)) or mark it public intentionally"
+        },
+        {
+          "code": "confirmed_dead",
+          "severity": "medium",
+          "category": "contract",
+          "message": "Statically unreferenced and received no traffic in the last 24h",
+          "evidence": "app/main.py:35 0 requests in window, no frontend call site",
+          "suggestion": "Remove the endpoint, or document the external consumer that keeps it alive"
+        }
+      ]
+    },
+    {
       "id": "cmp:loadStats",
       "type": "component",
       "label": "loadStats",

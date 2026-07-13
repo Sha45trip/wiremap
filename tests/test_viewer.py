@@ -41,6 +41,16 @@ def test_graph_json_injected_and_escaped(tmp_path, capsys):
     assert graph["nodes"] and graph["edges"]
 
 
+def test_history_json_injected(tmp_path, capsys):
+    html = _generate(tmp_path, capsys)
+    assert "__HISTORY_JSON__" not in html
+    payload = re.search(
+        r'<script id="history-data" type="application/json">(.*?)</script>',
+        html, re.S).group(1)
+    hist = json.loads(payload.replace("<\\/", "</"))
+    assert isinstance(hist, list) and len(hist) == 1
+
+
 def test_viewer_is_self_contained(tmp_path, capsys):
     html = _generate(tmp_path, capsys)
     assert not re.search(r'src="https?://', html)

@@ -28,7 +28,9 @@ Output goes to `<project>/.wiremap/`:
 
 `--serve` starts a local server and opens the viewer automatically.
 Re-scans are incremental: unchanged files are served from a content-hash
-cache (`--no-cache` forces a full re-parse).
+cache (`--no-cache` forces a full re-parse). Each scan appends a snapshot
+to `.wiremap/history.json`; the viewer's default panel shows a
+risk-over-time trend and the flags introduced/resolved since the last scan.
 
 ## Runtime overlay (OpenTelemetry)
 
@@ -237,8 +239,12 @@ module-qualified call graph (import-tracked resolution — no cross-module
 name collisions), and framework adapters (Django incl. CBVs + DRF routers,
 Flask blueprints, React Query, OpenAPI clients).
 
-**The roadmap through v0.x is complete.** Candidates beyond it: Express/
-Node backends, tRPC, protobuf OTLP, auth for team mode.
+Hardening beyond v0.x (see ROADMAP-v2.md) is largely done too: a
+real-world precision benchmark (bench/), protobuf OTLP, Express + GraphQL +
+Next.js/tRPC adapters, TypeScript response types, cross-function SQL taint,
+request-body contracts, router/middleware auth modeling, per-wire runtime
+attribution, and scan history/trends. Remaining: team-mode hardening and a
+PyPI release (Phase 7).
 
 ## Extending
 
